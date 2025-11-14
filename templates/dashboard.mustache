@@ -1,0 +1,211 @@
+{{!
+    @template local_mai/dashboard
+
+    Dashboard principal del plugin MAI.
+}}
+
+<style>
+.local-mai-dashboard-wrapper {
+    max-width: 980px;
+    margin: 0 auto;
+}
+
+/* Encabezado muy discreto */
+.local-mai-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin: 18px 0 14px;
+    font-size: 0.9rem;
+}
+.local-mai-header-title {
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+.local-mai-header-tag {
+    padding: 3px 10px;
+    border-radius: 999px;
+    background: #e0f2fe;
+    color: #0369a1;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+/* Grid de módulos */
+.local-mai-modules {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 18px;
+}
+
+/* Card estilo neumorphism suave */
+.local-mai-module-card {
+    position: relative;
+    border-radius: 18px;
+    padding: 16px 16px 14px;
+    background: #f5f7fb;
+    box-shadow:
+        6px 6px 14px rgba(15, 23, 42, 0.10),
+        -4px -4px 10px rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(226, 232, 240, 0.9);
+    cursor: pointer;
+    transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease, background .15s ease;
+}
+.local-mai-module-card:hover {
+    transform: translateY(-3px);
+    box-shadow:
+        10px 10px 22px rgba(15, 23, 42, 0.16),
+        -5px -5px 14px rgba(255, 255, 255, 0.98);
+    border-color: #bfdbfe;
+    background: #eef3ff;
+}
+
+/* Contenido: icono + textos */
+.local-mai-module-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.local-mai-module-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.3rem;
+    background: #ffffff;
+    box-shadow:
+        3px 3px 8px rgba(148, 163, 184, 0.35),
+        -2px -2px 6px rgba(255, 255, 255, 0.95);
+    color: #0f172a;
+}
+
+.local-mai-module-badge {
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: #e5edff;
+    color: #1d4ed8;
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+}
+
+.local-mai-module-title {
+    margin: 0;
+    font-size: 0.98rem;
+    font-weight: 600;
+    color: #0f172a;
+}
+
+/* Pie: link simple */
+.local-mai-module-footer {
+    margin-top: 8px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.local-mai-module-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.78rem;
+    color: #1d4ed8;
+    text-decoration: none;
+}
+.local-mai-module-link:hover {
+    text-decoration: underline;
+}
+
+/* Colores de iconos (solo un toque) */
+.local-mai-module-panel .local-mai-module-icon {
+    color: #0ea5e9;
+}
+.local-mai-module-participacion .local-mai-module-icon {
+    color: #22c55e;
+}
+.local-mai-module-estructura .local-mai-module-icon {
+    color: #f97316;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+    .local-mai-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 8px;
+    }
+}
+</style>
+
+<div class="local-mai-dashboard-wrapper">
+
+    <div class="local-mai-header">
+        <div class="local-mai-header-title">
+            Monitoreo Académico Integral
+        </div>
+        <div class="local-mai-header-tag">
+            Dashboard
+        </div>
+    </div>
+
+    <div class="local-mai-modules">
+
+  
+        <!-- Seguimiento de participación -->
+        <a href="./participacion.php" class="local-mai-module-card local-mai-module-participacion">
+            <div class="local-mai-module-top">
+                <div class="local-mai-module-icon">
+                    <i class="fa fa-users"></i>
+                </div>
+                <span class="local-mai-module-badge">Participación</span>
+            </div>
+            <h3 class="local-mai-module-title">Seguimiento de participación</h3>
+            <div class="local-mai-module-footer">
+                <span class="local-mai-module-link">
+                    Ver módulo
+                    <span>➜</span>
+                </span>
+            </div>
+        </a>
+
+        <!-- Estructura académica -->
+        <a href="./estructura.php" class="local-mai-module-card local-mai-module-estructura">
+            <div class="local-mai-module-top">
+                <div class="local-mai-module-icon">
+                    <i class="fa fa-sitemap"></i>
+                </div>
+                <span class="local-mai-module-badge">Estructura</span>
+            </div>
+            <h3 class="local-mai-module-title">Estructura académica</h3>
+            <div class="local-mai-module-footer">
+                <span class="local-mai-module-link">
+                    Ver módulo
+                    <span>➜</span>
+                </span>
+            </div>
+        </a>
+
+              <!-- Panel de control -->
+        <a href="./panel/index.php" class="local-mai-module-card local-mai-module-panel">
+            <div class="local-mai-module-top">
+                <div class="local-mai-module-icon">
+                    <i class="fa fa-chart-line"></i>
+                </div>
+                <span class="local-mai-module-badge">Panel</span>
+            </div>
+            <h3 class="local-mai-module-title">Panel de control MAI</h3>
+            <div class="local-mai-module-footer">
+                <span class="local-mai-module-link">
+                    Abrir panel
+                    <span>➜</span>
+                </span>
+            </div>
+        </a>
+
+
+    </div>
+</div>
