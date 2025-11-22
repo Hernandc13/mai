@@ -16,14 +16,77 @@ defined('MOODLE_INTERNAL') || die();
  * @param array $filters
  * @return array
  */
-
 function local_mai_get_participation_data(int $courseid, array $filters = []): array {
     global $DB;
 
     $course        = get_course($courseid);
     $coursecontext = context_course::instance($courseid);
 
-    // TODOS los campos de nombre para que fullname() no dispare debugging().
+    // Normalizar filtros
+    $categoryid = isset($filters['categoryid']) ? (int)$filters['categoryid'] : 0;
+    $cohortid   = isset($filters['cohortid'])   ? (int)$filters['cohortid']   : 0;
+    $groupid    = isset($filters['groupid'])    ? (int)$filters['groupid']    : 0;
+    $roleid     = isset($filters['roleid'])     ? (int)$filters['roleid']     : 0;
+
+    // 1) Filtro por categoría de curso
+    if ($categoryid && (int)$course->category !== $categoryid) {
+        return [
+            'course'          => $course,
+            'activos'         => [],
+            'inactivos'       => [],
+            'nuncaingresaron' => [],
+            'counts'          => ['active' => 0, 'inactive' => 0, 'never' => 0],
+            'total'           => 0,
+        ];
+    }
+
+    // 2) Usuarios por rol en el contexto del curso
+    $roleuserids = null;
+    if ($roleid) {
+        $sqlrole = "SELECT DISTINCT ra.userid
+                      FROM {role_assignments} ra
+                     WHERE ra.roleid = :roleid
+                       AND ra.contextid = :contextid";
+        $roleuserids = $DB->get_fieldset_sql($sqlrole, [
+            'roleid'    => $roleid,
+            'contextid' => $coursecontext->id
+        ]);
+
+        if (empty($roleuserids)) {
+            return [
+                'course'          => $course,
+                'activos'         => [],
+                'inactivos'       => [],
+                'nuncaingresaron' => [],
+                'counts'          => ['active' => 0, 'inactive' => 0, 'never' => 0],
+                'total'           => 0,
+            ];
+        }
+    }
+
+    // 3) Usuarios por cohorte
+    $cohortuserids = null;
+    if ($cohortid) {
+        $sqlcohortusers = "SELECT userid
+                             FROM {cohort_members}
+                            WHERE cohortid = :cohortid";
+        $cohortuserids = $DB->get_fieldset_sql($sqlcohortusers, [
+            'cohortid' => $cohortid
+        ]);
+
+        if (empty($cohortuserids)) {
+            return [
+                'course'          => $course,
+                'activos'         => [],
+                'inactivos'       => [],
+                'nuncaingresaron' => [],
+                'counts'          => ['active' => 0, 'inactive' => 0, 'never' => 0],
+                'total'           => 0,
+            ];
+        }
+    }
+
+    // 4) Usuarios matriculados (filtrando por grupo si aplica)
     $fields = 'u.id,
                u.firstname,
                u.lastname,
@@ -36,7 +99,7 @@ function local_mai_get_participation_data(int $courseid, array $filters = []): a
     $students = get_enrolled_users(
         $coursecontext,
         '',
-        0,
+        $groupid ?: 0,
         $fields,
         'u.lastname, u.firstname',
         0,
@@ -59,7 +122,7 @@ function local_mai_get_participation_data(int $courseid, array $filters = []): a
         ];
     }
 
-    // Total actividades con completion
+    // Total de actividades con completion
     $totalactivities = $DB->count_records_sql("
         SELECT COUNT(1)
           FROM {course_modules} cm
@@ -71,7 +134,17 @@ function local_mai_get_participation_data(int $courseid, array $filters = []): a
 
     foreach ($students as $user) {
 
-        $fullname = fullname($user); // ahora ya no saca avisos
+        // Filtro por rol
+        if ($roleuserids !== null && !in_array($user->id, $roleuserids)) {
+            continue;
+        }
+
+        // Filtro por cohorte
+        if ($cohortuserids !== null && !in_array($user->id, $cohortuserids)) {
+            continue;
+        }
+
+        $fullname = fullname($user);
 
         $lastaccess = $DB->get_field('user_lastaccess', 'timeaccess', [
             'userid'   => $user->id,
@@ -129,8 +202,8 @@ function local_mai_get_participation_data(int $courseid, array $filters = []): a
             }
 
             $inactivos[] = (object)[
-                'fullname' => $fullname,
-                'email'    => $user->email,
+                'fullname'   => $fullname,
+                'email'      => $user->email,
                 'lastaccess' => $lastaccess,
                 'minutes'    => $minutes,
                 'clicks'     => $clicks,
@@ -139,28 +212,39 @@ function local_mai_get_participation_data(int $courseid, array $filters = []): a
         }
 
         // Nunca ingresó
+        // Cohorte
         $cohortname = '';
-        $sqlcohort = "SELECT c.name
-                        FROM {cohort_members} cm
-                        JOIN {cohort} c ON c.id = cm.cohortid
-                       WHERE cm.userid = :userid";
-        if ($c = $DB->get_record_sql($sqlcohort, ['userid' => $user->id], IGNORE_MULTIPLE)) {
-            $cohortname = $c->name;
+        if ($cohortid) {
+            $cohortname = $DB->get_field('cohort', 'name', ['id' => $cohortid]) ?: '';
+        } else {
+            $sqlcohort = "SELECT c.name
+                            FROM {cohort_members} cm
+                            JOIN {cohort} c ON c.id = cm.cohortid
+                           WHERE cm.userid = :userid";
+            if ($c = $DB->get_record_sql($sqlcohort, ['userid' => $user->id], IGNORE_MULTIPLE)) {
+                $cohortname = $c->name;
+            }
         }
 
+        // Grupo
         $groupname = '';
-        $sqlgroup = "SELECT g.name
-                       FROM {groups_members} gm
-                       JOIN {groups} g ON g.id = gm.groupid
-                      WHERE gm.userid = :userid
-                        AND g.courseid = :courseid";
-        if ($g = $DB->get_record_sql($sqlgroup, [
-            'userid'   => $user->id,
-            'courseid' => $courseid
-        ], IGNORE_MULTIPLE)) {
-            $groupname = $g->name;
+        if ($groupid) {
+            $groupname = $DB->get_field('groups', 'name', ['id' => $groupid]) ?: '';
+        } else {
+            $sqlgroup = "SELECT g.name
+                           FROM {groups_members} gm
+                           JOIN {groups} g ON g.id = gm.groupid
+                          WHERE gm.userid = :userid
+                            AND g.courseid = :courseid";
+            if ($g = $DB->get_record_sql($sqlgroup, [
+                'userid'   => $user->id,
+                'courseid' => $courseid
+            ], IGNORE_MULTIPLE)) {
+                $groupname = $g->name;
+            }
         }
 
+        // Fecha de matrícula
         $sqlenrol = "SELECT MIN(ue.timecreated) AS enroltime
                        FROM {user_enrolments} ue
                        JOIN {enrol} e ON e.id = ue.enrolid

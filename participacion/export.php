@@ -28,7 +28,9 @@ require_sesskey();
 
 $PAGE->set_context($systemcontext);
 
-// Prepamos filtros
+// =====================
+// Filtros
+// =====================
 $filters = [
     'categoryid' => $categoryid,
     'cohortid'   => $cohortid,
@@ -36,7 +38,9 @@ $filters = [
     'roleid'     => $roleid,
 ];
 
+// =====================
 // Obtenemos datos
+// =====================
 $data = local_mai_get_participation_data($courseid, $filters);
 
 $course          = $data['course'];
@@ -51,13 +55,14 @@ $formatdate = function($timestamp) {
     return userdate($timestamp, get_string('strftimedatetime', 'langconfig'));
 };
 
-// Columnas base
+// =====================
+// Columnas
+// =====================
 $columns = [
     'segment'  => 'Segmento',
     'fullname' => 'Nombre completo',
 ];
 
-// Columnas opcionales
 if ($col_email) {
     $columns['email'] = 'Correo';
 }
@@ -74,13 +79,14 @@ if ($col_enroltime) {
     $columns['enroltime'] = 'Fecha de matrícula';
 }
 
-// Métricas comunes
 $columns['completed'] = 'Actividades completadas';
 $columns['progress']  = 'Avance (%)';
 $columns['minutes']   = 'Minutos (aprox.)';
 $columns['clicks']    = 'Clics';
 
-// Armamos filas
+// =====================
+// Filas
+// =====================
 $rows = [];
 
 $addrow = function(string $segment, stdClass $item) use (
@@ -109,7 +115,6 @@ $addrow = function(string $segment, stdClass $item) use (
         $row['enroltime'] = isset($item->enroltime) ? $formatdate($item->enroltime) : '';
     }
 
-    // Métricas (pueden venir vacías según el segmento)
     $row['completed'] = $item->completedactivities ?? '';
     $row['progress']  = $item->progress ?? '';
     $row['minutes']   = $item->minutes ?? '';
@@ -137,28 +142,25 @@ $filenamebase = 'mai_participacion_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $co
 $today = userdate(time(), '%Y%m%d');
 
 // =====================
-// Exportar a Excel vía dataformat
+// XLSX
 // =====================
 if ($format === 'xlsx') {
     $filename = $filenamebase . '_' . $today;
-
-    // En Moodle el nombre del formato es "excel".
     \core\dataformat::download_data($filename, 'excel', $columns, $rows);
     die;
 }
 
 // =====================
-// Exportar a CSV vía dataformat
+// CSV
 // =====================
 if ($format === 'csv') {
     $filename = $filenamebase . '_' . $today;
-
     \core\dataformat::download_data($filename, 'csv', $columns, $rows);
     die;
 }
 
 // =====================
-// PDF con encabezado
+// PDF
 // =====================
 if ($format === 'pdf') {
     $filename = $filenamebase . '_' . $today . '.pdf';
@@ -170,7 +172,6 @@ if ($format === 'pdf') {
     $pdf->SetMargins(15, 20, 15);
     $pdf->AddPage();
 
-    // Logo institucional (usamos el logo de Moodle por defecto; luego se puede parametrizar).
     $logopath = $CFG->dirroot . '/pix/moodlelogo.png';
     if (file_exists($logopath)) {
         $pdf->Image($logopath, 15, 10, 26);
@@ -186,7 +187,6 @@ if ($format === 'pdf') {
 
     $pdf->Ln(5);
 
-    // Tabla en HTML
     $html  = '<table border="1" cellpadding="4">';
     $html .= '<thead><tr style="background-color:#f0f0f0;">';
     foreach ($columns as $key => $title) {
@@ -206,10 +206,8 @@ if ($format === 'pdf') {
     $html .= '</tbody></table>';
 
     $pdf->writeHTML($html, true, false, true, false, '');
-
-    $pdf->Output($filename, 'D'); // Descargar
+    $pdf->Output($filename, 'D');
     die;
 }
 
-// Formato no soportado.
 print_error('Formato de exportación no soportado');
