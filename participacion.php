@@ -34,6 +34,10 @@ if ($roleid)     { $params['roleid']     = $roleid; }
 $PAGE->set_url(new moodle_url('/local/mai/participacion.php', $params));
 $PAGE->set_context($systemcontext);
 $PAGE->set_pagelayout('report');
+$PAGE->set_title($pagetitle);
+
+// jQuery de Moodle.
+$PAGE->requires->jquery();
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading($pagetitle);
@@ -48,14 +52,18 @@ echo '<script>
     window.define = window.__apex_define;
 </script>';
 
-// --- DataTables: CSS + jQuery + plugin ---
+// --- DataTables por CDN (SOLO plugin, sin jQuery externo) ---
 echo html_writer::empty_tag('link', [
     'rel'  => 'stylesheet',
     'href' => 'https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css'
 ]);
-// jQuery antes de DataTables (para evitar "jQuery is not defined").
-echo '<script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>';
 echo '<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>';
+
+// --- Font Awesome para iconos de exportación ---
+echo html_writer::empty_tag('link', [
+    'rel'  => 'stylesheet',
+    'href' => 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css'
+]);
 
 // =====================
 // Filtros: curso, categoría, cohorte, grupo, rol
@@ -66,13 +74,20 @@ $categoriesmenu = [0 => 'Todas las categorías'];
 $categorieslist = core_course_category::make_categories_list();
 $categoriesmenu += $categorieslist;
 
-// Cursos.
+// Cursos (para PHP y para JS dependiente).
 $coursesmenu = [0 => 'Todos los cursos'];
+$coursesdata = []; // Para JS: id, nombre, categoría.
+
 foreach (get_courses() as $c) {
     if ($c->id == SITEID) {
         continue;
     }
     $coursesmenu[$c->id] = format_string($c->fullname);
+    $coursesdata[] = [
+        'id'         => (int)$c->id,
+        'name'       => format_string($c->fullname),
+        'categoryid' => (int)$c->category
+    ];
 }
 
 // Cohortes.
@@ -97,17 +112,23 @@ foreach ($roles as $r) {
 }
 
 // ============================
-// CSS
+// CSS (layout tipo dashboard BI)
 // ============================
 
 $css = "
+#page-local-mai-participacion {
+    background: radial-gradient(circle at top left, #f9fafb 0, #ffffff 55%, #f1f5f9 100%);
+}
+
+/* CONTENEDOR PRINCIPAL */
 .local-mai-participation-layout {
     width: 100%;
     max-width: 1200px;
-    margin: 0 auto 32px;
+    margin: 8px auto 32px;
+    padding: 8px 12px 24px;
     display: flex;
-    gap: 22px;
-    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 
     --mai-maroon: #8C253E;
@@ -118,15 +139,6 @@ $css = "
     --mai-text-muted: #6b7280;
 }
 
-.local-mai-layout-left {
-    flex: 0 0 380px;
-}
-
-.local-mai-layout-right {
-    flex: 1 1 auto;
-    min-width: 0;
-}
-
 /* Encabezado core */
 #page-local-mai-participacion .page-header-headings h1,
 #page-local-mai-participacion .page-header-headings h2 {
@@ -134,14 +146,138 @@ $css = "
     font-weight: 700;
 }
 
-/* FILTROS en tarjeta IZQUIERDA */
-.local-mai-filters {
+/* ALERTA SUPERIOR */
+.local-mai-participation-wrapper .alert {
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 0.82rem;
+    border: none;
+    margin-bottom: 6px;
+}
+.local-mai-participation-wrapper .alert-info {
+    background: rgba(140, 37, 62, 0.06);
+    color: var(--mai-text-main);
+    border-left: 3px solid var(--mai-maroon);
+}
+.local-mai-participation-wrapper .alert-warning {
+    background: rgba(255, 112, 0, 0.06);
+    color: var(--mai-text-main);
+    border-left: 3px solid var(--mai-orange);
+}
+.local-mai-participation-wrapper .alert-danger {
+    background: #fef2f2;
+    color: #b91c1c;
+    border-left: 3px solid #ef4444;
+}
+
+/* CARD GENÉRICA */
+.local-mai-card {
+    position: relative;
+    border-radius: 20px;
+    border: 1px solid transparent;
+    background:
+        linear-gradient(#ffffff, #ffffff) padding-box,
+        radial-gradient(circle at top left,
+            rgba(140,37,62,0.10),
+            rgba(255,112,0,0.03)) border-box;
+    margin-bottom: 4px;
+    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.10);
+    overflow-x: hidden;
+    background-clip: padding-box, border-box;
+    padding: 0;
+}
+
+.local-mai-card-header {
+    padding: 10px 18px 8px;
+    border-bottom: 1px solid #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(to right,
+        rgba(140,37,62,0.04),
+        rgba(255,112,0,0.03));
+}
+
+.local-mai-card-title {
+    margin: 0;
+    font-size: 1.02rem;
+    font-weight: 600;
+    color: var(--mai-text-main);
+}
+
+.local-mai-card-body {
+    padding: 12px 18px 16px;
+}
+
+/* FILA KPIs (4 columnas) */
+.local-mai-card-kpis .local-mai-card-body {
+    padding-top: 10px;
+}
+.local-mai-kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+}
+.local-mai-kpi-card {
+    border-radius: 14px;
+    padding: 10px 12px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.local-mai-kpi-top {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.local-mai-kpi-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--mai-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+.local-mai-kpi-value {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: var(--mai-text-main);
+}
+.local-mai-kpi-sub {
+    font-size: 0.78rem;
+    color: var(--mai-text-muted);
+}
+
+/* mini-grafica dentro del KPI */
+.local-mai-kpi-chart {
     width: 100%;
-    padding: 16px 18px 14px;
-    border-radius: 16px;
-    border: 1px solid var(--mai-border-soft);
-    background: #ffffff;
-    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.06);
+    max-width: 180px;
+    margin: 0 auto;
+}
+
+/* Colores por KPI */
+.local-mai-kpi-card--total .local-mai-kpi-value { color: #111827; }
+.local-mai-kpi-card--activos .local-mai-kpi-value { color: #16a34a; }
+.local-mai-kpi-card--inactivos .local-mai-kpi-value { color: #f59e0b; }
+.local-mai-kpi-card--nunca .local-mai-kpi-value { color: #dc2626; }
+
+/* FILA PRINCIPAL: FILTROS (IZQ) + DETALLE (DER) */
+.local-mai-main-row {
+    display: flex;
+    gap: 18px;
+    align-items: flex-start;
+}
+.local-mai-main-left {
+    flex: 1 1 0;
+}
+.local-mai-main-right {
+    flex: 2 1 0;
+}
+
+/* FILTROS (card izquierda) */
+.local-mai-filters-body {
+    margin-top: 4px;
 }
 #local-mai-filters-form {
     display: flex;
@@ -156,45 +292,48 @@ $css = "
     align-items: flex-start;
 }
 .local-mai-filters label {
-    font-size: 0.8rem;
+    font-size: 0.78rem;
     font-weight: 600;
     color: var(--mai-text-muted);
-    margin: 0 0 2px 4px;
+    margin: 4px 0 2px 4px;
+    letter-spacing: 0.01em;
 }
 .local-mai-filters select.custom-select {
     width: 100%;
     border-radius: 999px;
     border: 1px solid var(--mai-border-soft);
-    font-size: 0.85rem;
-    padding: 6px 30px 6px 12px;
+    font-size: 0.84rem;
+    padding: 7px 34px 7px 12px;
     background-color: #f9fafb;
+    transition: box-shadow 0.18s ease, border-color 0.18s ease, background-color 0.18s ease, transform 0.1s ease;
+}
+.local-mai-filters select.custom-select:hover {
+    background-color: #ffffff;
 }
 .local-mai-filters select.custom-select:focus {
     outline: none;
     border-color: var(--mai-orange);
-    box-shadow: 0 0 0 1px rgba(255, 112, 0, 0.2);
+    background-color: #ffffff;
+    box-shadow: 0 0 0 1px rgba(255, 112, 0, 0.25);
+    transform: translateY(-1px);
 }
 
-/* BOTONES BRAND */
-.local-mai-btn-primary,
-.local-mai-btn-neutral,
-.local-mai-btn-ghost {
+/* BOTÓN APLICAR FILTROS */
+.local-mai-btn-primary {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    white-space: nowrap;
-    cursor: pointer;
-}
-
-.local-mai-btn-primary {
-    background: linear-gradient(135deg, var(--mai-maroon), var(--mai-orange));
+    background-color:#8C253E;
     border: none;
     color: #ffffff;
-    border-radius: 999px;
-    padding: 7px 20px;
-    font-size: 0.82rem;
+    border-radius: 10px;
+    padding: 9px 14px;
+    font-size: 0.84rem;
     font-weight: 600;
-    box-shadow: 0 8px 18px rgba(140, 37, 62, 0.25);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    width: 100%;
+    cursor: pointer;
 }
 .local-mai-btn-primary:hover,
 .local-mai-btn-primary:focus {
@@ -203,9 +342,102 @@ $css = "
     transform: translateY(-1px);
 }
 
-/* EXPORT CARD (columna derecha) */
-.local-mai-export-card h3 {
-    margin-bottom: 8px;
+/* CARD DETALLE / TABS */
+.local-mai-tabs {
+    display: flex;
+    width: 100%;
+    justify-content: space-between;
+    border-bottom: 1px solid #e5e7eb;
+    margin-bottom: 10px;
+    padding-bottom: 2px;
+}
+.local-mai-tab {
+    flex: 1 1 0;
+    border: none;
+    background: transparent;
+    padding: 7px 8px;
+    font-size: 0.86rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-align: center;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s ease;
+}
+.local-mai-tab--activos { color: #16a34a; }
+.local-mai-tab--inactivos { color: #f59e0b; }
+.local-mai-tab--nunca { color: #dc2626; }
+.local-mai-tab--activos.active {
+    border-bottom-color: #16a34a;
+    background: rgba(22, 163, 74, 0.06);
+    font-weight: 600;
+}
+.local-mai-tab--inactivos.active {
+    border-bottom-color: #f59e0b;
+    background: rgba(245, 158, 11, 0.06);
+    font-weight: 600;
+}
+.local-mai-tab--nunca.active {
+    border-bottom-color: #dc2626;
+    background: rgba(220, 38, 38, 0.06);
+    font-weight: 600;
+}
+.local-mai-tab-panels {
+    margin-top: 6px;
+}
+.local-mai-tab-panel {
+    display: none;
+}
+.local-mai-tab-panel.active {
+    display: block;
+}
+
+/* TABLAS */
+.local-mai-card table {
+    border-collapse: collapse;
+    font-size: 0.9rem;
+    width: 100%;
+}
+.local-mai-card table th,
+.local-mai-card table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid #f3f4f6;
+    box-sizing: border-box;
+}
+.local-mai-card table th {
+    background-color: rgba(140, 37, 62, 0.03);
+    font-weight: 600;
+    color: var(--mai-text-muted);
+}
+.local-mai-card .dataTables_wrapper {
+    margin-top: 8px;
+    overflow-x: auto;
+}
+.local-mai-card table.dataTable {
+    width: 100% !important;
+}
+.local-mai-card .dataTables_length label,
+.local-mai-card .dataTables_filter label {
+    font-size: 0.8rem;
+    color: var(--mai-text-muted);
+}
+.local-mai-card .dataTables_filter input {
+    border-radius: 999px;
+    border: 1px solid var(--mai-border-soft);
+    padding: 2px 8px;
+    font-size: 0.8rem;
+}
+.local-mai-card .dataTables_paginate a {
+    font-size: 0.8rem;
+}
+.local-mai-card table.dataTable.no-footer {
+    border-bottom: none;
+}
+
+/* EXPORT CARD */
+.local-mai-export-help {
+    font-size: 0.78rem;
+    color: var(--mai-text-muted);
+    margin: 0 0 8px;
 }
 .local-mai-export-row {
     display: flex;
@@ -218,8 +450,6 @@ $css = "
     font-weight: 600;
     color: var(--mai-maroon);
 }
-
-/* Chips tipo switch para columnas */
 .local-mai-export-columns {
     display: flex;
     flex-wrap: wrap;
@@ -276,241 +506,232 @@ $css = "
     color: var(--mai-maroon);
 }
 
-/* Botones secundarios export */
+/* Botones export centrados */
 .local-mai-export-buttons {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
+    justify-content: center;
+    margin-top: 8px;
 }
-.local-mai-btn-neutral {
+.local-mai-btn-export {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: 10px;
+    padding: 7px 14px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    border: 1px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+}
+.local-mai-btn-icon {
+    font-size: 0.95rem;
+    line-height: 1;
+}
+.local-mai-btn-excel {
+    background: #16a34a;
+    border-color: #15803d;
+    color: #ffffff;
+}
+.local-mai-btn-excel:hover,
+.local-mai-btn-excel:focus {
+    background: #15803d;
+}
+.local-mai-btn-pdf {
+    background: #dc2626;
+    border-color: #b91c1c;
+    color: #ffffff;
+}
+.local-mai-btn-pdf:hover,
+.local-mai-btn-pdf:focus {
+    background: #b91c1c;
+}
+.local-mai-btn-csv {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+    color: #374151;
+}
+.local-mai-btn-csv:hover,
+.local-mai-btn-csv:focus {
+    background: #e5e7eb;
+}
+
+/* MODAL LOADING */
+.local-mai-loading-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.35);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+}
+.local-mai-loading-modal {
     background: #ffffff;
-    border: 1px solid var(--mai-border-soft);
-    color: var(--mai-maroon);
-    border-radius: 999px;
-    padding: 6px 16px;
-    font-size: 0.82rem;
-    font-weight: 600;
-}
-.local-mai-btn-neutral:hover,
-.local-mai-btn-neutral:focus {
-    border-color: var(--mai-orange);
-    color: var(--mai-orange);
-    background: #f9fafb;
-}
-.local-mai-btn-ghost {
-    background: transparent;
-    border: 1px dashed var(--mai-border-soft);
-    color: var(--mai-text-muted);
-    border-radius: 999px;
-    padding: 6px 16px;
-    font-size: 0.8rem;
-    font-weight: 500;
-}
-.local-mai-btn-ghost:hover,
-.local-mai-btn-ghost:focus {
-    border-style: solid;
-    border-color: var(--mai-orange);
-    color: var(--mai-orange);
-}
-
-/* COLUMNA DERECHA */
-.local-mai-participation-wrapper {
-    padding: 4px 0 24px;
-    font-family: inherit;
-    min-width: 0;
-}
-
-/* ALERTAS */
-.local-mai-participation-wrapper .alert {
-    border-radius: 999px;
-    padding: 8px 14px;
-    font-size: 0.82rem;
-    border: none;
-    margin-bottom: 18px;
-}
-.local-mai-participation-wrapper .alert-info {
-    background: rgba(140, 37, 62, 0.06);
-    color: var(--mai-text-main);
-    border-left: 3px solid var(--mai-maroon);
-}
-.local-mai-participation-wrapper .alert-warning {
-    background: rgba(255, 112, 0, 0.06);
-    color: var(--mai-text-main);
-    border-left: 3px solid var(--mai-orange);
-}
-.local-mai-participation-wrapper .alert-danger {
-    background: #fef2f2;
-    color: #b91c1c;
-    border-left: 3px solid #ef4444;
-}
-
-/* BADGES SEMÁFORO */
-.local-mai-badge {
-    display: inline-block;
-    padding: 4px 10px;
-    border-radius: 999px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    color: #fff;
-}
-.local-mai-badge.green { background-color: #28a745; }
-.local-mai-badge.yellow { background-color: #ffc107; color: #333; }
-.local-mai-badge.red { background-color: #dc3545; }
-
-/* TARJETAS DERECHA */
-.local-mai-card {
-    border-radius: 16px;
-    border: 1px solid var(--mai-border-soft);
-    padding: 16px 18px;
-    margin-bottom: 24px;
-    background-color: #ffffff;
-    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.06);
-    overflow-x: hidden;
-}
-.local-mai-card h3 {
-    margin-top: 0;
-    margin-bottom: 10px;
-    font-size: 1.02rem;
-    font-weight: 600;
-    color: var(--mai-text-main);
-}
-
-/* GAUGES (ahora siempre caben en la tarjeta) */
-.local-mai-gauges-row {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: space-between;
-    align-items: flex-start;
-    gap: 16px;
-    max-width: 100%;
-}
-
-.local-mai-gauge {
-    flex: 1 1 calc(33.333% - 16px);
-    min-width: 0;
+    border-radius: 18px;
+    padding: 18px 26px 20px;
+    box-shadow: 0 18px 45px rgba(15,23,42,0.25);
     display: flex;
     flex-direction: column;
     align-items: center;
-    text-align: center;
+    gap: 10px;
+    min-width: 260px;
 }
-
-.local-mai-gauge-title {
-    font-weight: 600;
-    margin-bottom: 6px;
+.local-mai-loading-spinner {
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    border: 3px solid #e5e7eb;
+    border-top-color: #FF7000;
+    animation: local-mai-spin 0.8s linear infinite;
+}
+.local-mai-loading-text {
     font-size: 0.9rem;
-    color: var(--mai-text-main);
-}
-
-/* Contenedor del chart para que no se desborde */
-.local-mai-gauge-chart {
-    width: 100%;
-    max-width: 230px;
-}
-
-/* TABS TABLAS */
-.local-mai-tabs {
-    display: inline-flex;
-    gap: 6px;
-    padding: 2px;
-    border-radius: 999px;
-    background: #f3f4f6;
-    margin-bottom: 10px;
-}
-.local-mai-tab {
-    border: none;
-    background: transparent;
-    padding: 5px 12px;
-    border-radius: 999px;
-    font-size: 0.82rem;
     font-weight: 500;
-    color: var(--mai-text-muted);
-    cursor: pointer;
+    color: #111827;
 }
-.local-mai-tab.active {
-    background: #ffffff;
-    color: var(--mai-maroon);
-    box-shadow: 0 4px 10px rgba(15, 23, 42, 0.08);
-}
-.local-mai-tab-panels {
-    margin-top: 6px;
-}
-.local-mai-tab-panel {
-    display: none;
-}
-.local-mai-tab-panel.active {
-    display: block;
-}
-
-/* TABLAS DENTRO DE TABS */
-.local-mai-card table {
-    border-collapse: collapse;
-    font-size: 0.9rem;
-}
-.local-mai-card table th,
-.local-mai-card table td {
-    padding: 6px 8px;
-    border-bottom: 1px solid #f3f4f6;
-}
-.local-mai-card table th {
-    background-color: rgba(140, 37, 62, 0.03);
-    font-weight: 600;
-    color: var(--mai-text-muted);
-}
-
-/* DataTables limpio y contenido dentro de la tarjeta */
-.local-mai-card .dataTables_wrapper {
-    margin-top: 8px;
-    overflow-x: auto;
-}
-.local-mai-card table.dataTable {
-    width: 100% !important;
-}
-.local-mai-card .dataTables_length label,
-.local-mai-card .dataTables_filter label {
-    font-size: 0.8rem;
-    color: var(--mai-text-muted);
-}
-.local-mai-card .dataTables_filter input {
-    border-radius: 999px;
-    border: 1px solid var(--mai-border-soft);
-    padding: 2px 8px;
-    font-size: 0.8rem;
-}
-.local-mai-card .dataTables_paginate a {
-    font-size: 0.8rem;
-}
-.local-mai-card table.dataTable.no-footer {
-    border-bottom: none;
+@keyframes local-mai-spin {
+    to { transform: rotate(360deg); }
 }
 
 /* RESPONSIVE */
 @media (max-width: 900px) {
-    .local-mai-participation-layout {
+    .local-mai-kpi-row {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .local-mai-main-row {
         flex-direction: column;
-        max-width: 100%;
-        padding: 0 12px 24px;
-    }
-    .local-mai-layout-left,
-    .local-mai-layout-right {
-        flex: 1 1 100%;
-    }
-    .local-mai-gauge {
-        flex: 1 1 calc(50% - 16px);
     }
 }
 ";
 echo html_writer::tag('style', $css);
 
 // ============================
-// LAYOUT: 2 columnas
+// LAYOUT
 // ============================
 
 echo html_writer::start_div('local-mai-participation-layout');
 
-// -------- COLUMNA IZQUIERDA: filtros --------
-echo html_writer::start_div('local-mai-layout-left');
+echo html_writer::start_div('local-mai-participation-wrapper');
 
-echo html_writer::start_div('local-mai-filters');
+// ALERTA / loader inicial
+echo html_writer::tag(
+    'div',
+    'Selecciona un curso y haz clic en \"Aplicar filtros\" para ver la participación.',
+    ['id' => 'local-mai-participation-loading', 'class' => 'alert alert-info']
+);
+
+// ---- CARD KPIs ----
+echo html_writer::start_div('local-mai-card local-mai-card-kpis');
+echo html_writer::start_div('local-mai-card-header');
+echo html_writer::tag('h3', 'Resumen de participación', ['class' => 'local-mai-card-title']);
+echo html_writer::end_div();
+
+echo html_writer::start_div('local-mai-card-body');
+
+echo html_writer::start_div('local-mai-kpi-row');
+
+// Total inscritos
+echo html_writer::start_div('local-mai-kpi-card local-mai-kpi-card--total');
+echo html_writer::start_div('local-mai-kpi-top');
+echo html_writer::tag('div', 'Inscritos', ['class' => 'local-mai-kpi-label']);
+echo html_writer::tag('div', '0', [
+    'class' => 'local-mai-kpi-value',
+    'id'    => 'local-mai-kpi-total-value'
+]);
+echo html_writer::tag('div', 'Alumnos', [
+    'class' => 'local-mai-kpi-sub',
+    'id'    => 'local-mai-kpi-total-sub'
+]);
+echo html_writer::end_div(); // kpi-top
+echo html_writer::tag('div', '', [
+    'class' => 'local-mai-kpi-chart',
+    'id'    => 'local-mai-kpi-chart-total'
+]);
+echo html_writer::end_div();
+
+// Activos
+echo html_writer::start_div('local-mai-kpi-card local-mai-kpi-card--activos');
+echo html_writer::start_div('local-mai-kpi-top');
+echo html_writer::tag('div', 'Activos', ['class' => 'local-mai-kpi-label']);
+echo html_writer::tag('div', '0', [
+    'class' => 'local-mai-kpi-value',
+    'id'    => 'local-mai-kpi-active-value'
+]);
+echo html_writer::tag('div', '0% del total', [
+    'class' => 'local-mai-kpi-sub',
+    'id'    => 'local-mai-kpi-active-sub'
+]);
+echo html_writer::end_div();
+echo html_writer::tag('div', '', [
+    'class' => 'local-mai-kpi-chart',
+    'id'    => 'local-mai-kpi-chart-active'
+]);
+echo html_writer::end_div();
+
+// Inactivos
+echo html_writer::start_div('local-mai-kpi-card local-mai-kpi-card--inactivos');
+echo html_writer::start_div('local-mai-kpi-top');
+echo html_writer::tag('div', 'Inactivos', ['class' => 'local-mai-kpi-label']);
+echo html_writer::tag('div', '0', [
+    'class' => 'local-mai-kpi-value',
+    'id'    => 'local-mai-kpi-inactive-value'
+]);
+echo html_writer::tag('div', '0% del total', [
+    'class' => 'local-mai-kpi-sub',
+    'id'    => 'local-mai-kpi-inactive-sub'
+]);
+echo html_writer::end_div();
+echo html_writer::tag('div', '', [
+    'class' => 'local-mai-kpi-chart',
+    'id'    => 'local-mai-kpi-chart-inactive'
+]);
+echo html_writer::end_div();
+
+// Nunca ingresaron
+echo html_writer::start_div('local-mai-kpi-card local-mai-kpi-card--nunca');
+echo html_writer::start_div('local-mai-kpi-top');
+echo html_writer::tag('div', 'Nunca ingresaron', ['class' => 'local-mai-kpi-label']);
+echo html_writer::tag('div', '0', [
+    'class' => 'local-mai-kpi-value',
+    'id'    => 'local-mai-kpi-never-value'
+]);
+echo html_writer::tag('div', '0% del total', [
+    'class' => 'local-mai-kpi-sub',
+    'id'    => 'local-mai-kpi-never-sub'
+]);
+echo html_writer::end_div();
+echo html_writer::tag('div', '', [
+    'class' => 'local-mai-kpi-chart',
+    'id'    => 'local-mai-kpi-chart-never'
+]);
+echo html_writer::end_div();
+
+echo html_writer::end_div(); // kpi-row
+echo html_writer::end_div(); // card-body
+echo html_writer::end_div(); // card-kpis
+
+// ---- FILA PRINCIPAL: filtros IZQ, detalle DER ----
+echo html_writer::start_div('local-mai-main-row');
+
+// Columna izquierda: Filtros
+echo html_writer::start_div('local-mai-main-left');
+echo html_writer::start_div('local-mai-card local-mai-filters');
+
+echo html_writer::start_div('local-mai-card-header');
+echo html_writer::tag('h3', 'Filtros de búsqueda', ['class' => 'local-mai-card-title']);
+echo html_writer::end_div();
+
+echo html_writer::start_div('local-mai-card-body');
+echo html_writer::tag('p',
+    'Selecciona la combinación de filtros para analizar la participación.',
+    ['class' => 'local-mai-export-help']
+);
+
+echo html_writer::start_div('local-mai-filters-body');
 
 echo html_writer::start_tag('form', [
     'method' => 'get',
@@ -573,40 +794,61 @@ echo html_writer::empty_tag('input', [
 echo html_writer::end_div();
 
 echo html_writer::end_tag('form');
-echo html_writer::end_div(); // local-mai-filters
+echo html_writer::end_div(); // filters-body
+echo html_writer::end_div(); // card-body
+echo html_writer::end_div(); // card filtros
+echo html_writer::end_div(); // main-left
 
-echo html_writer::end_div(); // layout-left
+// Columna derecha: Detalle + Configuración de exportación
+echo html_writer::start_div('local-mai-main-right');
 
-// -------- COLUMNA DERECHA: loader + semáforo + export + tabs/tablas --------
-echo html_writer::start_div('local-mai-layout-right');
-echo html_writer::start_div('local-mai-participation-wrapper');
-
-// Loader / mensaje inicial.
-echo html_writer::tag('div',
-    'Selecciona un curso y haz clic en \"Aplicar filtros\" para ver la participación.',
-    ['id' => 'local-mai-participation-loading', 'class' => 'alert alert-info']
-);
-
-// Tarjeta de gauges (semáforo).
-echo html_writer::start_div('local-mai-card');
-echo html_writer::tag('h3', 'Semáforo de participación');
-echo html_writer::start_div('local-mai-gauges-row', ['id' => 'local-mai-participation-gauges']);
-echo html_writer::end_div();
+// Card Detalle por estudiante
+echo html_writer::start_div('local-mai-card', ['id' => 'local-mai-participation-tables']);
+echo html_writer::start_div('local-mai-card-header');
+echo html_writer::tag('h3', 'Detalle por estudiante', ['class' => 'local-mai-card-title']);
 echo html_writer::end_div();
 
-// Card EXPORT (inicialmente oculta)
+echo html_writer::start_div('local-mai-card-body');
+
+// Tabs y paneles
+echo '
+    <div class="local-mai-tabs">
+        <button type="button" class="local-mai-tab local-mai-tab--activos active" data-tab="activos">Activos</button>
+        <button type="button" class="local-mai-tab local-mai-tab--inactivos" data-tab="inactivos">Inactivos</button>
+        <button type="button" class="local-mai-tab local-mai-tab--nunca" data-tab="nunca">Nunca ingresaron</button>
+    </div>
+    <div class="local-mai-tab-panels">
+        <div id="local-mai-tab-activos" class="local-mai-tab-panel active"></div>
+        <div id="local-mai-tab-inactivos" class="local-mai-tab-panel"></div>
+        <div id="local-mai-tab-nunca" class="local-mai-tab-panel"></div>
+    </div>
+';
+
+echo html_writer::end_div(); // card-body detalle
+echo html_writer::end_div(); // card detalle
+
+// Nueva card Configuración de exportación (debajo)
 echo html_writer::start_div('local-mai-card local-mai-export-card', [
     'id'    => 'local-mai-export-card',
     'style' => 'display:none;'
 ]);
-echo html_writer::tag('h3', 'Exportar resultados');
+
+echo html_writer::start_div('local-mai-card-header');
+echo html_writer::tag('h3', 'Configuración de exportación', ['class' => 'local-mai-card-title']);
+echo html_writer::end_div();
+
+echo html_writer::start_div('local-mai-card-body');
+echo html_writer::tag(
+    'p',
+    'Activa o desactiva las columnas que se incluirán en los archivos Excel, PDF o CSV.',
+    ['class' => 'local-mai-export-help']
+);
 
 echo html_writer::start_div('local-mai-export-row');
 
 // Columnas export.
 echo html_writer::start_div('local-mai-export-columns');
-echo html_writer::tag('span', 'Configuración ·', ['class' => 'local-mai-export-label']);
-echo html_writer::tag('span', 'Columnas:', []);
+echo html_writer::tag('span', 'Columnas:', ['class' => 'local-mai-export-label']);
 
 echo html_writer::start_tag('label', ['class' => 'local-mai-chip']);
 echo html_writer::empty_tag('input', [
@@ -655,54 +897,52 @@ echo html_writer::end_tag('label');
 
 echo html_writer::end_div(); // export-columns
 
-// Botones export.
+// Botones export
 echo html_writer::start_div('local-mai-export-buttons');
-echo html_writer::tag('button', 'Excel', [
-    'type'  => 'button',
-    'class' => 'local-mai-btn-neutral',
-    'id'    => 'local-mai-export-excel'
-]);
-echo html_writer::tag('button', 'PDF', [
-    'type'  => 'button',
-    'class' => 'local-mai-btn-ghost',
-    'id'    => 'local-mai-export-pdf'
-]);
-echo html_writer::tag('button', 'CSV', [
-    'type'  => 'button',
-    'class' => 'local-mai-btn-ghost',
-    'id'    => 'local-mai-export-csv'
-]);
+
+echo '
+<button type="button" id="local-mai-export-excel" class="local-mai-btn-export local-mai-btn-excel">
+    <span class="local-mai-btn-icon"><i class="fa-solid fa-file-excel"></i></span>
+    <span>Excel</span>
+</button>';
+
+echo '
+<button type="button" id="local-mai-export-pdf" class="local-mai-btn-export local-mai-btn-pdf">
+    <span class="local-mai-btn-icon"><i class="fa-solid fa-file-pdf"></i></span>
+    <span>PDF</span>
+</button>';
+
+echo '
+<button type="button" id="local-mai-export-csv" class="local-mai-btn-export local-mai-btn-csv">
+    <span class="local-mai-btn-icon"><i class="fa-solid fa-file-csv"></i></span>
+    <span>CSV</span>
+</button>';
+
 echo html_writer::end_div(); // export-buttons
 
 echo html_writer::end_div(); // export-row
-echo html_writer::end_div(); // export-card
+echo html_writer::end_div(); // card-body export
+echo html_writer::end_div(); // card export
 
-// Card de tabs/tablas (Activos / Inactivos / Nunca ingresaron)
-echo html_writer::start_div('', ['id' => 'local-mai-participation-tables']);
-echo html_writer::start_div('local-mai-card');
-echo html_writer::tag('h3', 'Detalle por estudiante');
-echo '
-    <div class="local-mai-tabs">
-        <button type="button" class="local-mai-tab active" data-tab="activos">Activos</button>
-        <button type="button" class="local-mai-tab" data-tab="inactivos">Inactivos</button>
-        <button type="button" class="local-mai-tab" data-tab="nunca">Nunca ingresaron</button>
-    </div>
-    <div class="local-mai-tab-panels">
-        <div id="local-mai-tab-activos" class="local-mai-tab-panel active"></div>
-        <div id="local-mai-tab-inactivos" class="local-mai-tab-panel"></div>
-        <div id="local-mai-tab-nunca" class="local-mai-tab-panel"></div>
-    </div>
-';
-echo html_writer::end_div(); // card
-echo html_writer::end_div(); // participation-tables
+echo html_writer::end_div(); // main-right
+
+echo html_writer::end_div(); // main-row
 
 echo html_writer::end_div(); // participation-wrapper
-echo html_writer::end_div(); // layout-right
-
 echo html_writer::end_div(); // participation-layout
 
+// ------- MODAL LOADING (overlay) -------
+echo '
+<div id="local-mai-loading-modal" class="local-mai-loading-backdrop">
+    <div class="local-mai-loading-modal">
+        <div class="local-mai-loading-spinner"></div>
+        <div class="local-mai-loading-text">Cargando datos de participación...</div>
+    </div>
+</div>
+';
+
 // ============================
-// JS inline (sin AMD)
+// JS inline (sin require, usando jQuery global de Moodle)
 // ============================
 
 $ajaxurl    = (new moodle_url('/local/mai/participacion/ajax.php'))->out(false);
@@ -711,14 +951,23 @@ $sesskey    = sesskey();
 
 ?>
 <script>
+var MAI_COURSES = <?php echo json_encode($coursesdata); ?> || [];
+var MAI_INITIAL_COURSEID = '<?php echo (int)$courseid; ?>';
+var MAI_INITIAL_CATEGORYID = '<?php echo (int)$categoryid; ?>';
+
 document.addEventListener('DOMContentLoaded', function() {
+    var $ = window.jQuery || null;
+    if (!$) {
+        console.error('jQuery de Moodle no está disponible.');
+        return;
+    }
+
     var ajaxUrl        = '<?php echo $ajaxurl; ?>';
     var exportUrlBase  = '<?php echo $exporturl; ?>';
     var sesskey        = '<?php echo $sesskey; ?>';
 
     var form       = document.getElementById('local-mai-filters-form');
     var loadingEl  = document.getElementById('local-mai-participation-loading');
-    var gaugesEl   = document.getElementById('local-mai-participation-gauges');
     var exportCard = document.getElementById('local-mai-export-card');
 
     var tabActivos   = document.getElementById('local-mai-tab-activos');
@@ -729,9 +978,198 @@ document.addEventListener('DOMContentLoaded', function() {
     var exportPdfBtn   = document.getElementById('local-mai-export-pdf');
     var exportCsvBtn   = document.getElementById('local-mai-export-csv');
 
+    var loadingModal = document.getElementById('local-mai-loading-modal');
+
+    // ---------- SELECT DEPENDIENTE CATEGORÍA -> CURSO ----------
+    function populateCourses(categoryId, selectedCourseId) {
+        var courseSelect = document.getElementById('id_courseid');
+        if (!courseSelect) {
+            return;
+        }
+
+        categoryId = categoryId || '0';
+        selectedCourseId = (typeof selectedCourseId === 'undefined' || selectedCourseId === null)
+            ? courseSelect.value || '0'
+            : selectedCourseId;
+
+        // Limpiar opciones actuales
+        while (courseSelect.firstChild) {
+            courseSelect.removeChild(courseSelect.firstChild);
+        }
+
+        // Opción default
+        var optAll = document.createElement('option');
+        optAll.value = '0';
+        optAll.textContent = 'Todos los cursos';
+        courseSelect.appendChild(optAll);
+
+        // Agregar cursos según categoría
+        MAI_COURSES.forEach(function(c) {
+            if (categoryId === '0' || String(c.categoryid) === String(categoryId)) {
+                var o = document.createElement('option');
+                o.value = String(c.id);
+                o.textContent = c.name;
+                if (String(c.id) === String(selectedCourseId)) {
+                    o.selected = true;
+                }
+                courseSelect.appendChild(o);
+            }
+        });
+    }
+
+    var categorySelect = document.getElementById('id_categoryid');
+    if (categorySelect) {
+        var initialCat = MAI_INITIAL_CATEGORYID || categorySelect.value || '0';
+        var initialCourse = MAI_INITIAL_COURSEID || '0';
+        populateCourses(initialCat, initialCourse);
+
+        categorySelect.addEventListener('change', function() {
+            var selectedCat = this.value || '0';
+            populateCourses(selectedCat, '0');
+        });
+    }
+
+    // ---------- MODAL LOADING ----------
+    function showLoadingModal() {
+        if (loadingModal) {
+            loadingModal.style.display = 'flex';
+        }
+    }
+    function hideLoadingModal() {
+        if (loadingModal) {
+            loadingModal.style.display = 'none';
+        }
+    }
+
     function toggleExportCard(show) {
         if (!exportCard) { return; }
         exportCard.style.display = show ? 'block' : 'none';
+    }
+
+    // ---------- KPIs ----------
+    function renderKpis(counts, total) {
+        counts = counts || {};
+
+        var active   = counts.active   || 0;
+        var inactive = counts.inactive || 0;
+        var never    = counts.never    || 0;
+
+        function pct(n) {
+            return total > 0 ? Math.round((n * 100) / total) : 0;
+        }
+
+        var totalEl = document.getElementById('local-mai-kpi-total-value');
+        if (totalEl) { totalEl.textContent = total; }
+
+        var actVal = document.getElementById('local-mai-kpi-active-value');
+        var actSub = document.getElementById('local-mai-kpi-active-sub');
+        if (actVal) { actVal.textContent = active + ' (' + pct(active) + '%)'; }
+        if (actSub) { actSub.textContent = 'Del total de inscritos'; }
+
+        var inaVal = document.getElementById('local-mai-kpi-inactive-value');
+        var inaSub = document.getElementById('local-mai-kpi-inactive-sub');
+        if (inaVal) { inaVal.textContent = inactive + ' (' + pct(inactive) + '%)'; }
+        if (inaSub) { inaSub.textContent = 'Han ingresado pero no actúan'; }
+
+        var nevVal = document.getElementById('local-mai-kpi-never-value');
+        var nevSub = document.getElementById('local-mai-kpi-never-sub');
+        if (nevVal) { nevVal.textContent = never + ' (' + pct(never) + '%)'; }
+        if (nevSub) { nevSub.textContent = 'Matriculados sin acceso'; }
+    }
+
+    // ---------- Gauges dentro de los KPIs ----------
+    var kpiChartsIds = {
+        total:   'local-mai-kpi-chart-total',
+        active:  'local-mai-kpi-chart-active',
+        inactive:'local-mai-kpi-chart-inactive',
+        never:   'local-mai-kpi-chart-never'
+    };
+
+    function clearGauges() {
+        Object.keys(kpiChartsIds).forEach(function(key) {
+            var el = document.getElementById(kpiChartsIds[key]);
+            if (el) { el.innerHTML = ''; }
+        });
+    }
+
+    function renderGauge(elementId, percent, color, label) {
+        var el = document.getElementById(elementId);
+        if (!el || typeof ApexCharts === 'undefined') {
+            return;
+        }
+        el.innerHTML = '';
+
+        var options = {
+            chart: {
+                type: 'radialBar',
+                height: 140,
+                sparkline: { enabled: true }
+            },
+            series: [percent],
+            labels: [label],
+            colors: [color],
+            plotOptions: {
+                radialBar: {
+                    startAngle: -90,
+                    endAngle: 90,
+                    hollow: {
+                        margin: 0,
+                        size: '65%'
+                    },
+                    track: {
+                        background: '#f3f4f6',
+                        strokeWidth: '100%'
+                    },
+                    dataLabels: {
+                        name: {
+                            fontSize: '12px',
+                            offsetY: 26
+                        },
+                        value: {
+                            fontSize: '16px',
+                            formatter: function(val) {
+                                return Math.round(val) + '%';
+                            },
+                            offsetY: -10
+                        }
+                    }
+                }
+            }
+        };
+        var chart = new ApexCharts(el, options);
+        chart.render();
+    }
+
+    function renderGauges(counts, total) {
+        counts = counts || {};
+        var active   = counts.active   || 0;
+        var inactive = counts.inactive || 0;
+        var never    = counts.never    || 0;
+
+        function pct(n) {
+            return total > 0 ? Math.round((n * 100) / total) : 0;
+        }
+
+        clearGauges();
+
+        renderGauge(kpiChartsIds.total, total > 0 ? 100 : 0, '#0f766e', 'Total');
+        renderGauge(kpiChartsIds.active, pct(active), '#16a34a', 'Activos');
+        renderGauge(kpiChartsIds.inactive, pct(inactive), '#f59e0b', 'Inactivos');
+        renderGauge(kpiChartsIds.never, pct(never), '#dc2626', 'Nunca');
+    }
+
+    // --- Ajustar columnas de DataTables al cambiar de tab ---
+    function adjustTableForTab(tab) {
+        if (!$.fn.DataTable) {
+            return;
+        }
+        if (tab === 'activos' && $('#local-mai-table-activos').length && $.fn.DataTable.isDataTable('#local-mai-table-activos')) {
+            $('#local-mai-table-activos').DataTable().columns.adjust();
+        } else if (tab === 'inactivos' && $('#local-mai-table-inactivos').length && $.fn.DataTable.isDataTable('#local-mai-table-inactivos')) {
+            $('#local-mai-table-inactivos').DataTable().columns.adjust();
+        } else if (tab === 'nunca' && $('#local-mai-table-nunca').length && $.fn.DataTable.isDataTable('#local-mai-table-nunca')) {
+            $('#local-mai-table-nunca').DataTable().columns.adjust();
+        }
     }
 
     // --- Tabs comportamiento ---
@@ -751,6 +1189,10 @@ document.addEventListener('DOMContentLoaded', function() {
             } else {
                 tabNunca.classList.add('active');
             }
+
+            setTimeout(function() {
+                adjustTableForTab(tab);
+            }, 10);
         });
     });
 
@@ -808,108 +1250,31 @@ document.addEventListener('DOMContentLoaded', function() {
         return exportUrlBase + '?' + params.toString();
     }
 
-    // --- Gauges ---
-    function renderGauges(counts, total) {
-        gaugesEl.innerHTML = '';
-
-        if (!total) {
-            gaugesEl.innerHTML = '<p class=\"text-muted\">No hay estudiantes que coincidan con los filtros seleccionados.</p>';
-            return;
-        }
-
-        var keys   = ['active', 'inactive', 'never'];
-        var titles = ['Activos', 'Inactivos', 'Nunca ingresaron'];
-        var colors = ['#28a745', '#ffc107', '#dc3545']; // semáforo
-
-        for (var i = 0; i < keys.length; i++) {
-            var key   = keys[i];
-            var title = titles[i];
-            var color = colors[i];
-
-            var count   = counts[key] || 0;
-            var percent = total > 0 ? Math.round((count * 100) / total) : 0;
-
-            var gaugeWrapper = document.createElement('div');
-            gaugeWrapper.className = 'local-mai-gauge';
-
-            var titleEl = document.createElement('div');
-            titleEl.className = 'local-mai-gauge-title';
-            titleEl.textContent = title + ' (' + count + '/' + total + ')';
-            gaugeWrapper.appendChild(titleEl);
-
-            var chartDiv = document.createElement('div');
-            chartDiv.id = 'local-mai-gauge-' + key;
-            chartDiv.className = 'local-mai-gauge-chart';
-            gaugeWrapper.appendChild(chartDiv);
-
-            gaugesEl.appendChild(gaugeWrapper);
-
-            if (typeof ApexCharts !== 'undefined') {
-                var options = {
-                    chart: {
-                        type: 'radialBar',
-                        height: 170,
-                        sparkline: {
-                            enabled: true
-                        }
-                    },
-                    series: [percent],
-                    labels: [title],
-                    colors: [color],
-                    plotOptions: {
-                        radialBar: {
-                            startAngle: -90,
-                            endAngle: 90,
-                            hollow: {
-                                margin: 0,
-                                size: '65%'
-                            },
-                            track: {
-                                background: '#f3f4f6',
-                                strokeWidth: '100%'
-                            },
-                            dataLabels: {
-                                name: {
-                                    fontSize: '13px',
-                                    offsetY: 28
-                                },
-                                value: {
-                                    fontSize: '18px',
-                                    formatter: function(val) {
-                                        return Math.round(val) + '%';
-                                    },
-                                    offsetY: -12
-                                }
-                            }
-                        }
-                    }
-                };
-                var chart = new ApexCharts(chartDiv, options);
-                chart.render();
-            }
-        }
-    }
-
     // --- DataTables helper ---
     function initDataTable(selector) {
-        if (!window.jQuery || !jQuery.fn.DataTable) {
+        if (!$.fn || !$.fn.DataTable) {
+            console.error('DataTables no está disponible para', selector);
             return;
         }
-        var $ = jQuery;
-        if ($.fn.DataTable.isDataTable(selector)) {
-            $(selector).DataTable().destroy();
+        var $table = $(selector);
+        if (!$table.length) {
+            return;
         }
-        $(selector).DataTable({
-            pageLength: 25,
-            lengthMenu: [10, 25, 50, 100],
+        if ($.fn.DataTable.isDataTable($table)) {
+            $table.DataTable().destroy();
+        }
+        $table.DataTable({
+            pageLength: 5,
+            lengthChange: false,
+            dom: 'ftip',
             ordering: true,
             searching: true,
             info: true,
             scrollX: true,
+            autoWidth: false,
             language: {
                 decimal: ',',
                 thousands: '.',
-                lengthMenu: 'Mostrar _MENU_ registros',
                 zeroRecords: 'No se encontraron resultados',
                 info: 'Mostrando _START_ a _END_ de _TOTAL_ registros',
                 infoEmpty: 'Mostrando 0 a 0 de 0 registros',
@@ -944,7 +1309,6 @@ document.addEventListener('DOMContentLoaded', function() {
             return html;
         }
 
-        // Activos
         tabActivos.innerHTML = buildTable(
             'local-mai-table-activos',
             ['Nombre completo', 'Correo', 'Act.Completadas', 'Avance', 'Último acceso'],
@@ -960,7 +1324,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         );
 
-        // Inactivos
         tabInactivos.innerHTML = buildTable(
             'local-mai-table-inactivos',
             ['Nombre completo', 'Correo', 'Último acceso', 'Minutos (aprox.)', 'Clics'],
@@ -976,7 +1339,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         );
 
-        // Nunca ingresaron
         tabNunca.innerHTML = buildTable(
             'local-mai-table-nunca',
             ['Nombre completo', 'Correo', 'Cohorte', 'Grupo', 'Fecha de matrícula'],
@@ -992,7 +1354,6 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         );
 
-        // Si todo vacío → mensaje general.
         if (!activos.length && !inactivos.length && !nunca.length) {
             tabActivos.innerHTML = '<div class=\"alert alert-warning\">No se encontraron estudiantes con los filtros seleccionados.</div>';
             tabInactivos.innerHTML = '';
@@ -1000,25 +1361,31 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // Inicializar DataTables
-        initDataTable('#local-mai-table-activos');
-        initDataTable('#local-mai-table-inactivos');
-        initDataTable('#local-mai-table-nunca');
+        setTimeout(function() {
+            initDataTable('#local-mai-table-activos');
+            initDataTable('#local-mai-table-inactivos');
+            initDataTable('#local-mai-table-nunca');
+            adjustTableForTab('activos');
+        }, 10);
     }
 
     // --- Carga participación ---
     function loadParticipation(filters) {
         if (!filters.courseid || filters.courseid === '0') {
+            hideLoadingModal();
             loadingEl.className = 'alert alert-warning';
             loadingEl.textContent = 'Debes seleccionar un curso antes de aplicar filtros.';
             loadingEl.style.display = 'block';
-            gaugesEl.innerHTML = '';
             tabActivos.innerHTML = '';
             tabInactivos.innerHTML = '';
             tabNunca.innerHTML = '';
             toggleExportCard(false);
+            renderKpis({}, 0);
+            clearGauges();
             return;
         }
+
+        showLoadingModal();
 
         loadingEl.className = 'alert alert-info';
         loadingEl.textContent = 'Cargando información de participación...';
@@ -1040,24 +1407,27 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             return response.json();
         }).then(function(data) {
+            hideLoadingModal();
             loadingEl.style.display = 'none';
+            renderKpis(data.counts || {}, data.total || 0);
             renderGauges(data.counts || {}, data.total || 0);
             renderTables(data);
-            toggleExportCard(true); // mostrar export solo con datos cargados
+            toggleExportCard(true);
         }).catch(function(err) {
             console.error(err);
+            hideLoadingModal();
             loadingEl.className = 'alert alert-danger';
             loadingEl.textContent = 'Ocurrió un error al cargar la información de participación.';
             loadingEl.style.display = 'block';
-            gaugesEl.innerHTML = '';
             tabActivos.innerHTML = '';
             tabInactivos.innerHTML = '';
             tabNunca.innerHTML = '';
             toggleExportCard(false);
+            renderKpis({}, 0);
+            clearGauges();
         });
     }
 
-    // Eventos
     if (form) {
         form.addEventListener('submit', function(ev) {
             ev.preventDefault();

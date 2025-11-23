@@ -48,15 +48,19 @@ $activos         = $data['activos'];
 $inactivos       = $data['inactivos'];
 $nuncaingresaron = $data['nuncaingresaron'];
 
+// Fechas en formato 13/04/2005
 $formatdate = function($timestamp) {
     if (empty($timestamp)) {
         return '-';
     }
-    return userdate($timestamp, get_string('strftimedatetime', 'langconfig'));
+    return userdate($timestamp, '%d/%m/%Y');
 };
 
+// ¿Hay inactivos? → sólo entonces mostramos columnas minutos/clics.
+$hasinactive = !empty($inactivos);
+
 // =====================
-// Columnas
+// Columnas (títulos COMPLETOS)
 // =====================
 $columns = [
     'segment'  => 'Segmento',
@@ -81,8 +85,11 @@ if ($col_enroltime) {
 
 $columns['completed'] = 'Actividades completadas';
 $columns['progress']  = 'Avance (%)';
-$columns['minutes']   = 'Minutos (aprox.)';
-$columns['clicks']    = 'Clics';
+
+if ($hasinactive) {
+    $columns['minutes'] = 'Minutos (aprox.)';
+    $columns['clicks']  = 'Clics';
+}
 
 // =====================
 // Filas
@@ -92,7 +99,7 @@ $rows = [];
 $addrow = function(string $segment, stdClass $item) use (
     &$rows,
     $col_email, $col_cohort, $col_group, $col_lastaccess, $col_enroltime,
-    $formatdate
+    $formatdate, $hasinactive
 ) {
     $row = [
         'segment'  => $segment,
@@ -117,8 +124,11 @@ $addrow = function(string $segment, stdClass $item) use (
 
     $row['completed'] = $item->completedactivities ?? '';
     $row['progress']  = $item->progress ?? '';
-    $row['minutes']   = $item->minutes ?? '';
-    $row['clicks']    = $item->clicks ?? '';
+
+    if ($hasinactive) {
+        $row['minutes'] = $item->minutes ?? '';
+        $row['clicks']  = $item->clicks ?? '';
+    }
 
     $rows[] = $row;
 };
@@ -139,7 +149,7 @@ foreach ($nuncaingresaron as $n) {
 }
 
 $filenamebase = 'mai_participacion_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $course->shortname);
-$today = userdate(time(), '%Y%m%d');
+$today        = userdate(time(), '%Y%m%d');
 
 // =====================
 // XLSX
@@ -160,52 +170,194 @@ if ($format === 'csv') {
 }
 
 // =====================
-// PDF
+// PDF  (sin encabezados en páginas 2+)
 // =====================
 if ($format === 'pdf') {
+
+    core_php_time_limit::raise(0);
+    raise_memory_limit(MEMORY_EXTRA);
+
     $filename = $filenamebase . '_' . $today . '.pdf';
 
     $pdf = new pdf();
+    $pdf->setPrintHeader(false);
+    $pdf->setPrintFooter(false);
+
     $pdf->SetCreator('Moodle');
     $pdf->SetAuthor(fullname($USER));
     $pdf->SetTitle('Reporte de participación - ' . format_string($course->fullname));
     $pdf->SetMargins(15, 20, 15);
     $pdf->AddPage();
 
-    $logopath = $CFG->dirroot . '/pix/moodlelogo.png';
-    if (file_exists($logopath)) {
-        $pdf->Image($logopath, 15, 10, 26);
-        $pdf->Ln(20);
+    $margins    = $pdf->getMargins();
+    $leftmargin = $margins['left'];
+    $usablew    = $pdf->getPageWidth() - $margins['left'] - $margins['right'];
+
+    // Logo personalizado (SVG)
+    $logopath = $CFG->dirroot . '/local/mai/img/logo.svg';
+    if (file_exists($logopath) && method_exists($pdf, 'ImageSVG')) {
+        $pdf->ImageSVG(
+            '@' . file_get_contents($logopath),
+            $x = $leftmargin,
+            $y = 10,
+            $w = 26,
+            $h = '',
+            $link = '',
+            $align = '',
+            $palign = '',
+            $border = 0,
+            $fitonpage = false
+        );
+        $pdf->Ln(22);
+    } else {
+        $pnglogo = $CFG->dirroot . '/pix/moodlelogo.png';
+        if (file_exists($pnglogo)) {
+            $pdf->Image($pnglogo, $leftmargin, 10, 26);
+            $pdf->Ln(20);
+        }
     }
 
+    // Título
     $pdf->SetFont('helvetica', 'B', 14);
     $pdf->Cell(0, 10, 'Reporte de participación estudiantil', 0, 1, 'C');
 
+    // Subtítulos
     $pdf->SetFont('helvetica', '', 11);
     $pdf->Cell(0, 7, 'Curso: ' . format_string($course->fullname), 0, 1, 'C');
     $pdf->Cell(0, 7, 'Fecha de generación: ' . userdate(time(), '%d/%m/%Y %H:%M'), 0, 1, 'C');
 
-    $pdf->Ln(5);
+    $pdf->Ln(6);
 
-    $html  = '<table border="1" cellpadding="4">';
-    $html .= '<thead><tr style="background-color:#f0f0f0;">';
-    foreach ($columns as $key => $title) {
-        $html .= '<th><b>' . s($title) . '</b></th>';
+    $colkeys = array_keys($columns);
+
+    // Pesos por columna
+    $weights  = [
+        'segment'   => 2.0,
+        'fullname'  => 2.8,
+        'email'     => 2.4,
+        'cohort'    => 1.6,
+        'group'     => 1.6,
+        'lastaccess'=> 2.6,
+        'enroltime' => 2.4,
+        'completed' => 2.6,
+        'progress'  => 1.8,
+        'minutes'   => 2.2,
+        'clicks'    => 1.2,
+    ];
+
+    $sumweights = 0;
+    foreach ($colkeys as $key) {
+        $sumweights += $weights[$key] ?? 1;
     }
-    $html .= '</tr></thead><tbody>';
+
+    $colwidths = [];
+    foreach ($colkeys as $key) {
+        $w = $weights[$key] ?? 1;
+        $colwidths[$key] = $usablew * ($w / max($sumweights, 1));
+    }
+
+    $pdf->SetTextColor(0, 0, 0);
+
+    // -------- Encabezado SOLO en la PRIMER página ----------
+    $pdf->SetFillColor(240, 240, 240);
+    $pdf->SetFont('helvetica', 'B', 8);
+
+    $headerHeight = 0;
+    foreach ($colkeys as $key) {
+        $title = $columns[$key];
+        $headerHeight = max(
+            $headerHeight,
+            $pdf->getStringHeight($colwidths[$key], $title)
+        );
+    }
+
+    $startY = $pdf->GetY();
+    $x = $leftmargin;
+
+    foreach ($colkeys as $key) {
+        $title = $columns[$key];
+        $w = $colwidths[$key];
+
+        $pdf->MultiCell(
+            $w,
+            $headerHeight,
+            $title,
+            0,
+            'C',
+            true,
+            0,
+            $x,
+            $startY,
+            true,
+            0,
+            false,
+            true,
+            $headerHeight,
+            'M'
+        );
+        $x += $w;
+    }
+
+    $pdf->SetXY($leftmargin, $startY + $headerHeight + 1.5);
+
+    // -------- Filas ----------
+    $pdf->SetFont('helvetica', '', 8);
+    $pdf->SetFillColor(255, 255, 255);
+
+    $centerkeys = ['completed', 'progress', 'lastaccess', 'enroltime'];
 
     foreach ($rows as $row) {
-        $html .= '<tr>';
-        foreach ($columns as $key => $title) {
-            $val = isset($row[$key]) ? $row[$key] : '';
-            $html .= '<td>' . s((string)$val) . '</td>';
+
+        $rowHeight = 0;
+        foreach ($colkeys as $key) {
+            $val = isset($row[$key]) ? (string)$row[$key] : '';
+            $rowHeight = max(
+                $rowHeight,
+                $pdf->getStringHeight($colwidths[$key], $val)
+            );
         }
-        $html .= '</tr>';
+
+        $pageHeight = $pdf->getPageHeight();
+        $breakY     = $pageHeight - $pdf->getBreakMargin();
+
+        if ($pdf->GetY() + $rowHeight > $breakY) {
+            // Nueva página SIN encabezados
+            $pdf->AddPage();
+            $pdf->SetFont('helvetica', '', 8);
+        }
+
+        $y = $pdf->GetY();
+        $x = $leftmargin;
+
+        foreach ($colkeys as $key) {
+            $val = isset($row[$key]) ? (string)$row[$key] : '';
+            $w   = $colwidths[$key];
+
+            $align = in_array($key, $centerkeys, true) ? 'C' : 'L';
+
+            $pdf->MultiCell(
+                $w,
+                $rowHeight,
+                $val,
+                0,
+                $align,
+                false,
+                0,
+                $x,
+                $y,
+                true,
+                0,
+                false,
+                true,
+                $rowHeight,
+                'M'
+            );
+            $x += $w;
+        }
+
+        $pdf->SetXY($leftmargin, $y + $rowHeight + 0.5);
     }
 
-    $html .= '</tbody></table>';
-
-    $pdf->writeHTML($html, true, false, true, false, '');
     $pdf->Output($filename, 'D');
     die;
 }
