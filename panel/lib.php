@@ -4,6 +4,47 @@
 defined('MOODLE_INTERNAL') || die();
 
 /**
+ * Helper: totales de actividades con completion y completadas por curso.
+ *
+ * @param int $courseid
+ * @return array ['modules' => int, 'completed' => int]
+ */
+function local_mai_panel_course_completion_totals(int $courseid): array {
+    global $DB;
+
+    // Actividades con completion activado.
+    $modules = $DB->count_records_sql(
+        "SELECT COUNT(1)
+           FROM {course_modules} cm
+          WHERE cm.course = :courseid
+            AND cm.deletioninprogress = 0
+            AND cm.completion <> 0",
+        ['courseid' => $courseid]
+    );
+
+    if (!$modules) {
+        return ['modules' => 0, 'completed' => 0];
+    }
+
+    // Registros de completion (estado distinto de 0).
+    $completed = $DB->count_records_sql(
+        "SELECT COUNT(1)
+           FROM {course_modules_completion} cmc
+           JOIN {course_modules} cm ON cm.id = cmc.coursemoduleid
+          WHERE cm.course = :courseid
+            AND cm.deletioninprogress = 0
+            AND cm.completion <> 0
+            AND cmc.completionstate <> 0",
+        ['courseid' => $courseid]
+    );
+
+    return [
+        'modules'   => (int)$modules,
+        'completed' => (int)$completed,
+    ];
+}
+
+/**
  * Cálculo de estadísticas para el panel MAI (gráficos).
  *
  * @param int $programid  Programa académico (categoría padre).
@@ -64,6 +105,10 @@ function local_mai_panel_get_stats(int $programid = 0, int $termid = 0,
         'never'    => 0,
     ];
 
+    // Para promedio global de actividades completadas (ponderado).
+    $globalCompCompleted = 0;
+    $globalCompDenom     = 0;
+
     foreach ($courses as $course) {
         $catid = (int)$course->category;
 
@@ -106,19 +151,33 @@ function local_mai_panel_get_stats(int $programid = 0, int $termid = 0,
             continue;
         }
 
+        // Totales de completion a nivel de curso.
+        $completionTotals = local_mai_panel_course_completion_totals($course->id);
+        $compModules      = $completionTotals['modules'];
+        $compCompleted    = $completionTotals['completed'];
+
+        // Denominador = estudiantes * actividades con completion.
+        $compDenom = $total > 0 ? ($total * $compModules) : 0;
+
         $courseStats[$course->id] = [
-            'course'   => $course,
-            'category' => $catid,
-            'active'   => $ca,
-            'inactive' => $ci,
-            'never'    => $cn,
-            'total'    => $total,
+            'course'         => $course,
+            'category'       => $catid,
+            'active'         => $ca,
+            'inactive'       => $ci,
+            'never'          => $cn,
+            'total'          => $total,
+            'comp_modules'   => $compModules,
+            'comp_completed' => $compCompleted,
+            'comp_denom'     => $compDenom,
         ];
 
         $global['courses']++;
         $global['active']   += $ca;
         $global['inactive'] += $ci;
         $global['never']    += $cn;
+
+        $globalCompCompleted += $compCompleted;
+        $globalCompDenom     += $compDenom;
     }
 
     // ==========================
@@ -134,6 +193,9 @@ function local_mai_panel_get_stats(int $programid = 0, int $termid = 0,
         'retention' => $globalTotal > 0
             ? (int)round((($global['active'] + $global['inactive']) * 100) / $globalTotal)
             : 0,
+        'avgcompletion' => $globalCompDenom > 0
+            ? round(($globalCompCompleted * 100) / $globalCompDenom, 1)
+            : null,
     ];
 
     // ==========================
@@ -150,12 +212,14 @@ function local_mai_panel_get_stats(int $programid = 0, int $termid = 0,
 
         if (!isset($programStats[$topprogramid])) {
             $programStats[$topprogramid] = [
-                'program'  => $programcats[$topprogramid],
-                'courses'  => 0,
-                'active'   => 0,
-                'inactive' => 0,
-                'never'    => 0,
-                'total'    => 0,
+                'program'        => $programcats[$topprogramid],
+                'courses'        => 0,
+                'active'         => 0,
+                'inactive'       => 0,
+                'never'          => 0,
+                'total'          => 0,
+                'comp_completed' => 0,
+                'comp_denom'     => 0,
             ];
         }
 
@@ -164,21 +228,30 @@ function local_mai_panel_get_stats(int $programid = 0, int $termid = 0,
         $programStats[$topprogramid]['inactive'] += $cs['inactive'];
         $programStats[$topprogramid]['never']    += $cs['never'];
         $programStats[$topprogramid]['total']    += $cs['total'];
+
+        $programStats[$topprogramid]['comp_completed'] += $cs['comp_completed'];
+        $programStats[$topprogramid]['comp_denom']     += $cs['comp_denom'];
     }
 
     $programstatsOut = [];
     foreach ($programStats as $pid => $ps) {
         $total = $ps['total'];
         $ret = $total > 0 ? (int)round((($ps['active'] + $ps['inactive']) * 100) / $total) : 0;
+
+        $avgcomp = $ps['comp_denom'] > 0
+            ? round(($ps['comp_completed'] * 100) / $ps['comp_denom'], 1)
+            : null;
+
         $programstatsOut[] = [
-            'id'        => (int)$pid,
-            'name'      => format_string($ps['program']->name),
-            'courses'   => (int)$ps['courses'],
-            'active'    => (int)$ps['active'],
-            'inactive'  => (int)$ps['inactive'],
-            'never'     => (int)$ps['never'],
-            'total'     => (int)$ps['total'],
-            'retention' => $ret,
+            'id'           => (int)$pid,
+            'name'         => format_string($ps['program']->name),
+            'courses'      => (int)$ps['courses'],
+            'active'       => (int)$ps['active'],
+            'inactive'     => (int)$ps['inactive'],
+            'never'        => (int)$ps['never'],
+            'total'        => (int)$ps['total'],
+            'retention'    => $ret,
+            'avgcompletion'=> $avgcomp,
         ];
     }
 
@@ -252,5 +325,43 @@ function local_mai_panel_get_stats(int $programid = 0, int $termid = 0,
         'programstats' => $programstatsOut,
         'termsstats'   => $termsStatsOut,
         'filters'      => $filtersOut,
+    ];
+}
+
+/**
+ * Obtiene únicamente la estructura de filtros (ligero).
+ *
+ * @param int $programid
+ * @param int $termid
+ * @param int $teacherid
+ * @param int $groupid
+ * @return array
+ */
+function local_mai_panel_get_filters(int $programid = 0, int $termid = 0,
+        int $teacherid = 0, int $groupid = 0): array {
+
+    global $DB;
+
+    $termsOut = [];
+
+    if ($programid) {
+        $termcats = $DB->get_records('course_categories', ['parent' => $programid], 'sortorder',
+            'id, name, parent');
+        foreach ($termcats as $tc) {
+            $termsOut[] = [
+                'id'   => (int)$tc->id,
+                'name' => format_string($tc->name),
+            ];
+        }
+    }
+
+    return [
+        'filters' => [
+            'programid' => $programid,
+            'termid'    => $termid,
+            'teacherid' => $teacherid,
+            'groupid'   => $groupid,
+            'terms'     => $termsOut,
+        ],
     ];
 }

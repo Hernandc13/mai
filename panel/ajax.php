@@ -10,6 +10,7 @@ $systemcontext = context_system::instance();
 require_capability('local/mai:viewreport', $systemcontext);
 require_sesskey();
 
+$mode      = optional_param('mode', 'stats', PARAM_ALPHA);
 $programid = optional_param('programid', 0, PARAM_INT);
 $termid    = optional_param('termid', 0, PARAM_INT);
 $teacherid = optional_param('teacherid', 0, PARAM_INT);
@@ -17,8 +18,13 @@ $groupid   = optional_param('groupid', 0, PARAM_INT);
 
 $PAGE->set_context($systemcontext);
 
-// Llamamos al lib propio del panel.
-$data = local_mai_panel_get_stats($programid, $termid, $teacherid, $groupid);
+if ($mode === 'filters') {
+    // Llamada ligera solo para actualizar selects de cuatrimestre.
+    $data = local_mai_panel_get_filters($programid, $termid, $teacherid, $groupid);
+} else {
+    // Llamamos al lib propio del panel para todas las estadísticas.
+    $data = local_mai_panel_get_stats($programid, $termid, $teacherid, $groupid);
+}
 
 @header('Content-Type: application/json; charset=utf-8');
 echo json_encode($data);

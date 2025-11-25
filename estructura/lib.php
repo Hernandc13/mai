@@ -378,3 +378,50 @@ function local_mai_estructura_get_stats(int $programid = 0, int $termid = 0, int
         'filters'      => $filtersOut,
     ];
 }
+
+/**
+ * Versión ligera: devuelve solo la estructura de filtros
+ * (principalmente cuatrimestres del programa), sin recorrer todos los cursos
+ * ni calcular participación.
+ *
+ * Pensado para cuando el usuario solo cambia el programa en la pestaña
+ * "Vista por cuatrimestre" y aún no ha seleccionado cuatrimestre.
+ *
+ * @param int $programid
+ * @param int $termid
+ * @param int $teacherid
+ * @param int $groupid
+ * @return array
+ */
+function local_mai_estructura_get_filters(int $programid = 0, int $termid = 0,
+        int $teacherid = 0, int $groupid = 0): array {
+
+    global $DB;
+
+    $termsOut = [];
+
+    if ($programid) {
+        $termcats = $DB->get_records('course_categories', ['parent' => $programid], 'sortorder',
+            'id, name, parent');
+        foreach ($termcats as $tc) {
+            $termsOut[] = [
+                'id'   => (int)$tc->id,
+                'name' => format_string($tc->name),
+            ];
+        }
+    }
+
+    // Para este modo ligero no calculamos docentes ni grupos hasta que se
+    // seleccione un cuatrimestre y se llame a local_mai_estructura_get_stats().
+    return [
+        'filters' => [
+            'programid'  => $programid,
+            'termid'     => $termid,
+            'teacherid'  => $teacherid,
+            'groupid'    => $groupid,
+            'teachers'   => [],
+            'terms'      => $termsOut,
+            'groups'     => [],
+        ],
+    ];
+}
