@@ -59,3 +59,6 @@ $string['group_neveraccessed'] = 'Nunca ingresaron';
 
 $string['col_cohort'] = 'Cohorte';
 $string['col_group'] = 'Grupo';
+
+$string['task_send_scheduled_reports'] = 'Envío automatizado de reportes';
+$string['task_check_inactivity_alerts'] = 'Revisión de alertas de inactividad';

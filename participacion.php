@@ -41,6 +41,23 @@ $PAGE->requires->jquery();
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading($pagetitle);
+// Botón para volver al dashboard principal de MAI.
+$backurl = new moodle_url('/local/mai/index.php');
+
+echo html_writer::start_div('local-mai-panel-back');
+
+$icon  = html_writer::tag('i', '', [
+    'class' => 'fa-solid fa-arrow-left local-mai-btn-back-icon',
+    'aria-hidden' => 'true'
+]);
+$label = html_writer::tag('span', 'Volver al Menú');
+
+echo html_writer::tag('a', $icon . $label, [
+    'href'  => $backurl->out(false),
+    'class' => 'local-mai-btn-back'
+]);
+
+echo html_writer::end_div();
 
 // --- Carga segura de ApexCharts (sin AMD/RequireJS) ---
 echo '<script>
@@ -59,7 +76,7 @@ echo html_writer::empty_tag('link', [
 ]);
 echo '<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>';
 
-// --- Font Awesome para iconos de exportación ---
+// --- Font Awesome para iconos de exportación / cards ---
 echo html_writer::empty_tag('link', [
     'rel'  => 'stylesheet',
     'href' => 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css'
@@ -116,6 +133,15 @@ foreach ($roles as $r) {
 // ============================
 
 $css = "
+:root {
+    --mai-maroon: #8C253E;
+    --mai-orange: #FF7000;
+    --mai-bg-soft: #f8fafc;
+    --mai-border-soft: #e5e7eb;
+    --mai-text-main: #111827;
+    --mai-text-muted: #6b7280;
+}
+
 #page-local-mai-participacion {
     background: radial-gradient(circle at top left, #f9fafb 0, #ffffff 55%, #f1f5f9 100%);
 }
@@ -130,13 +156,6 @@ $css = "
     flex-direction: column;
     gap: 16px;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-
-    --mai-maroon: #8C253E;
-    --mai-orange: #FF7000;
-    --mai-bg-soft: #f8fafc;
-    --mai-border-soft: #e5e7eb;
-    --mai-text-main: #111827;
-    --mai-text-muted: #6b7280;
 }
 
 /* Encabezado core */
@@ -198,11 +217,59 @@ $css = "
         rgba(255,112,0,0.03));
 }
 
+/* Encabezado con icono + texto */
+.local-mai-card-header-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.local-mai-card-header-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(140,37,62,0.08);
+    color: var(--mai-maroon);
+    font-size: 1rem;
+}
+
+.local-mai-card-header-text {
+    display: flex;
+    flex-direction: column;
+}
+
 .local-mai-card-title {
     margin: 0;
     font-size: 1.02rem;
     font-weight: 600;
     color: var(--mai-text-main);
+}
+
+.local-mai-card-subtitle {
+    margin: 2px 0 0;
+    font-size: 0.8rem;
+    color: var(--mai-text-muted);
+}
+
+/* Variantes de header por card */
+.local-mai-card-header--kpis .local-mai-card-header-icon {
+    background: rgba(37, 99, 235, 0.10);
+    color: #2563eb;
+}
+.local-mai-card-header--filters .local-mai-card-header-icon {
+    background: rgba(148, 163, 184, 0.18);
+    color: var(--mai-text-main);
+}
+.local-mai-card-header--detalle .local-mai-card-header-icon {
+    background: rgba(22, 163, 74, 0.12);
+    color: #16a34a;
+}
+.local-mai-card-header--export .local-mai-card-header-icon {
+    background: rgba(249, 115, 22, 0.14);
+    color: var(--mai-orange);
 }
 
 .local-mai-card-body {
@@ -606,6 +673,40 @@ $css = "
         flex-direction: column;
     }
 }
+    /* Botón regresar al dashboard MAI */
+.local-mai-panel-back {
+    display: flex;
+    justify-content: flex-start; /* cambia a flex-end si lo quieres a la derecha */
+    margin-bottom: 6px;
+}
+
+.local-mai-btn-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--mai-border-soft);
+    background: #ffffff;
+    color: var(--mai-text-muted);
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease, color .15s ease;
+}
+
+.local-mai-btn-back:hover,
+.local-mai-btn-back:focus {
+    border-color: rgba(140,37,62,0.35);
+    color: var(--mai-maroon);
+    box-shadow: 0 8px 18px rgba(15,23,42,0.10);
+    transform: translateY(-1px);
+}
+
+.local-mai-btn-back-icon {
+    font-size: 0.85rem;
+}
 ";
 echo html_writer::tag('style', $css);
 
@@ -620,15 +721,25 @@ echo html_writer::start_div('local-mai-participation-wrapper');
 // ALERTA / loader inicial
 echo html_writer::tag(
     'div',
-    'Selecciona un curso y haz clic en \"Aplicar filtros\" para ver la participación.',
+    'Selecciona un curso y haz clic en "Aplicar filtros" para ver la participación.',
     ['id' => 'local-mai-participation-loading', 'class' => 'alert alert-info']
 );
 
 // ---- CARD KPIs ----
 echo html_writer::start_div('local-mai-card local-mai-card-kpis');
-echo html_writer::start_div('local-mai-card-header');
+
+// header con icono y subtítulo
+echo html_writer::start_div('local-mai-card-header local-mai-card-header--kpis');
+echo html_writer::start_div('local-mai-card-header-main');
+echo html_writer::tag('span', '<i class="fa-solid fa-chart-pie"></i>', [
+    'class' => 'local-mai-card-header-icon'
+]);
+echo html_writer::start_div('local-mai-card-header-text');
 echo html_writer::tag('h3', 'Resumen de participación', ['class' => 'local-mai-card-title']);
-echo html_writer::end_div();
+echo html_writer::tag('p', 'Indicadores globales del curso seleccionado.', ['class' => 'local-mai-card-subtitle']);
+echo html_writer::end_div(); // header-text
+echo html_writer::end_div(); // header-main
+echo html_writer::end_div(); // card-header
 
 echo html_writer::start_div('local-mai-card-body');
 
@@ -721,9 +832,18 @@ echo html_writer::start_div('local-mai-main-row');
 echo html_writer::start_div('local-mai-main-left');
 echo html_writer::start_div('local-mai-card local-mai-filters');
 
-echo html_writer::start_div('local-mai-card-header');
+// header filtros
+echo html_writer::start_div('local-mai-card-header local-mai-card-header--filters');
+echo html_writer::start_div('local-mai-card-header-main');
+echo html_writer::tag('span', '<i class="fa-solid fa-filter"></i>', [
+    'class' => 'local-mai-card-header-icon'
+]);
+echo html_writer::start_div('local-mai-card-header-text');
 echo html_writer::tag('h3', 'Filtros de búsqueda', ['class' => 'local-mai-card-title']);
-echo html_writer::end_div();
+echo html_writer::tag('p', 'Refina el análisis por categoría, curso, cohorte, grupo y rol.', ['class' => 'local-mai-card-subtitle']);
+echo html_writer::end_div(); // header-text
+echo html_writer::end_div(); // header-main
+echo html_writer::end_div(); // card-header
 
 echo html_writer::start_div('local-mai-card-body');
 echo html_writer::tag('p',
@@ -804,9 +924,19 @@ echo html_writer::start_div('local-mai-main-right');
 
 // Card Detalle por estudiante
 echo html_writer::start_div('local-mai-card', ['id' => 'local-mai-participation-tables']);
-echo html_writer::start_div('local-mai-card-header');
+
+// header detalle
+echo html_writer::start_div('local-mai-card-header local-mai-card-header--detalle');
+echo html_writer::start_div('local-mai-card-header-main');
+echo html_writer::tag('span', '<i class="fa-solid fa-user-check"></i>', [
+    'class' => 'local-mai-card-header-icon'
+]);
+echo html_writer::start_div('local-mai-card-header-text');
 echo html_writer::tag('h3', 'Detalle por estudiante', ['class' => 'local-mai-card-title']);
-echo html_writer::end_div();
+echo html_writer::tag('p', 'Listado segmentado de estudiantes según su nivel de actividad.', ['class' => 'local-mai-card-subtitle']);
+echo html_writer::end_div(); // header-text
+echo html_writer::end_div(); // header-main
+echo html_writer::end_div(); // card-header
 
 echo html_writer::start_div('local-mai-card-body');
 
@@ -833,9 +963,17 @@ echo html_writer::start_div('local-mai-card local-mai-export-card', [
     'style' => 'display:none;'
 ]);
 
-echo html_writer::start_div('local-mai-card-header');
+echo html_writer::start_div('local-mai-card-header local-mai-card-header--export');
+echo html_writer::start_div('local-mai-card-header-main');
+echo html_writer::tag('span', '<i class="fa-solid fa-file-export"></i>', [
+    'class' => 'local-mai-card-header-icon'
+]);
+echo html_writer::start_div('local-mai-card-header-text');
 echo html_writer::tag('h3', 'Configuración de exportación', ['class' => 'local-mai-card-title']);
-echo html_writer::end_div();
+echo html_writer::tag('p', 'Personaliza columnas y formato antes de descargar los resultados.', ['class' => 'local-mai-card-subtitle']);
+echo html_writer::end_div(); // header-text
+echo html_writer::end_div(); // header-main
+echo html_writer::end_div(); // card-header
 
 echo html_writer::start_div('local-mai-card-body');
 echo html_writer::tag(

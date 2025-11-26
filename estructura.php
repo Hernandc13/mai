@@ -27,8 +27,24 @@ $PAGE->requires->jquery();
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading($pagetitle);
+// Botón para volver al dashboard principal de MAI.
+$backurl = new moodle_url('/local/mai/index.php');
 
-// Font Awesome (íconos exportación)
+echo html_writer::start_div('local-mai-panel-back');
+
+$icon  = html_writer::tag('i', '', [
+    'class' => 'fa-solid fa-arrow-left local-mai-btn-back-icon',
+    'aria-hidden' => 'true'
+]);
+$label = html_writer::tag('span', 'Volver al Menú');
+
+echo html_writer::tag('a', $icon . $label, [
+    'href'  => $backurl->out(false),
+    'class' => 'local-mai-btn-back'
+]);
+
+echo html_writer::end_div();
+// Font Awesome (íconos exportación / headers)
 echo '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />';
 
 // DataTables (tabla limpia sin botones de exportación)
@@ -64,14 +80,17 @@ $groupoptions = [0 => 'Todos los grupos'];
 // CSS
 // ======================
 $css = "
-#page-local-mai-estructura {
-    background: radial-gradient(circle at top left, #f9fafb 0, #ffffff 55%, #f1f5f9 100%);
+:root {
     --mai-maroon: #8C253E;
     --mai-orange: #FF7000;
     --mai-bg-soft: #f8fafc;
     --mai-border-soft: #e5e7eb;
     --mai-text-main: #111827;
     --mai-text-muted: #6b7280;
+}
+
+#page-local-mai-estructura {
+    background: radial-gradient(circle at top left, #f9fafb 0, #ffffff 55%, #f1f5f9 100%);
 }
 
 /* Encabezado core */
@@ -111,8 +130,15 @@ $css = "
     overflow-x: hidden;
     background-clip: padding-box, border-box;
     padding: 0;
+    transition: transform 0.16s ease, box-shadow 0.16s ease;
 }
 
+.local-mai-card:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 22px 45px rgba(15,23,42,0.14);
+}
+
+/* HEADER DE CARD CON ICONO */
 .local-mai-card-header {
     padding: 10px 18px 8px;
     border-bottom: 1px solid #f3f4f6;
@@ -120,6 +146,29 @@ $css = "
     align-items: center;
     justify-content: space-between;
     background: linear-gradient(to right, rgba(140,37,62,0.04), rgba(255,112,0,0.03));
+}
+
+.local-mai-card-header-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.local-mai-card-header-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(140,37,62,0.10);
+    color: var(--mai-maroon);
+    font-size: 1rem;
+}
+
+.local-mai-card-header-text {
+    display: flex;
+    flex-direction: column;
 }
 
 .local-mai-card-title {
@@ -133,6 +182,24 @@ $css = "
     margin: 2px 0 0;
     font-size: 0.8rem;
     color: var(--mai-text-muted);
+}
+
+/* Variantes header */
+.local-mai-card-header--general .local-mai-card-header-icon {
+    background: rgba(59,130,246,0.12);
+    color: #2563eb;
+}
+.local-mai-card-header--programs .local-mai-card-header-icon {
+    background: rgba(34,197,94,0.12);
+    color: #16a34a;
+}
+.local-mai-card-header--term .local-mai-card-header-icon {
+    background: rgba(249,115,22,0.14);
+    color: var(--mai-orange);
+}
+.local-mai-card-header--export .local-mai-card-header-icon {
+    background: rgba(148,163,184,0.16);
+    color: var(--mai-text-main);
 }
 
 .local-mai-card-body {
@@ -471,15 +538,16 @@ $css = "
     font-weight: 600;
     color: var(--mai-text-muted);
     cursor: pointer;
+    position: relative;
 }
 
 .local-mai-tab-btn.active {
     background: #ffffff;
     color: var(--mai-maroon);
-    box-shadow: 0 -1px 0 #ffffff, 0 2px 6px rgba(15,23,42,0.08);
+    box-shadow: 0 -1px 0 #ffffff, 0 6px 16px rgba(15,23,42,0.10);
 }
 
-/* AQUÍ EL FIX: solo se muestra el tab activo */
+/* Solo tab activo visible */
 .local-mai-tab-pane {
     display: none;
 }
@@ -508,28 +576,43 @@ $css = "
     }
 }
 
-/* --- Tweaks premium --- */
-.local-mai-card {
-    transition: transform 0.16s ease, box-shadow 0.16s ease;
-}
-
-.local-mai-card:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 22px 45px rgba(15,23,42,0.14);
-}
-
+/* Hover filas tabla */
 .local-mai-table tbody tr:hover {
     background-color: #f9fafb;
 }
-
-.local-mai-tab-btn {
-    position: relative;
+    /* Botón regresar al dashboard MAI */
+.local-mai-panel-back {
+    display: flex;
+    justify-content: flex-start; /* cambia a flex-end si lo quieres a la derecha */
+    margin-bottom: 6px;
 }
 
-.local-mai-tab-btn.active {
+.local-mai-btn-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--mai-border-soft);
     background: #ffffff;
+    color: var(--mai-text-muted);
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease, color .15s ease;
+}
+
+.local-mai-btn-back:hover,
+.local-mai-btn-back:focus {
+    border-color: rgba(140,37,62,0.35);
     color: var(--mai-maroon);
-    box-shadow: 0 -1px 0 #ffffff, 0 6px 16px rgba(15,23,42,0.10);
+    box-shadow: 0 8px 18px rgba(15,23,42,0.10);
+    transform: translateY(-1px);
+}
+
+.local-mai-btn-back-icon {
+    font-size: 0.85rem;
 }
 ";
 
@@ -544,7 +627,7 @@ echo html_writer::start_div('local-mai-estructura-layout');
 // Subtítulo
 echo html_writer::tag(
     'div',
-    'Usa las pestañas para revisar: vista general de la plataforma, resumen por programa académico y detalle por cuatrimestre con filtros por docente y grupo.',
+    'Usa las pestañas para revisar: vista general, resumen por programa académico y detalle por cuatrimestre con filtros por docente y grupo.',
     ['class' => 'local-mai-page-subtitle']
 );
 
@@ -567,13 +650,23 @@ echo '<div class="local-mai-tabs-content">';
 echo '<div class="local-mai-tab-pane active" data-tabpane="general">';
 
 echo html_writer::start_div('local-mai-card', ['id' => 'local-mai-estructura-general']);
-echo html_writer::start_div('local-mai-card-header');
+
+// header con icono
+echo html_writer::start_div('local-mai-card-header local-mai-card-header--general');
+echo html_writer::start_div('local-mai-card-header-main');
+echo html_writer::tag('span', '<i class="fa-solid fa-globe"></i>', [
+    'class' => 'local-mai-card-header-icon'
+]);
+echo html_writer::start_div('local-mai-card-header-text');
+echo html_writer::tag('div', 'Vista general de la plataforma', ['class' => 'local-mai-card-title']);
 echo html_writer::tag(
-    'p',
+    'div',
     'Resumen global de cursos y usuarios en toda la plataforma.',
     ['class' => 'local-mai-card-subtitle']
 );
-echo html_writer::end_div();
+echo html_writer::end_div(); // header-text
+echo html_writer::end_div(); // header-main
+echo html_writer::end_div(); // card-header
 
 echo html_writer::start_div('local-mai-card-body');
 echo html_writer::start_div('local-mai-general-row');
@@ -606,13 +699,23 @@ echo '</div>'; // tab-pane general
 echo '<div class="local-mai-tab-pane" data-tabpane="programas">';
 
 echo html_writer::start_div('local-mai-card', ['id' => 'local-mai-estructura-programas']);
-echo html_writer::start_div('local-mai-card-header');
+
+// header con icono
+echo html_writer::start_div('local-mai-card-header local-mai-card-header--programs');
+echo html_writer::start_div('local-mai-card-header-main');
+echo html_writer::tag('span', '<i class="fa-solid fa-diagram-project"></i>', [
+    'class' => 'local-mai-card-header-icon'
+]);
+echo html_writer::start_div('local-mai-card-header-text');
+echo html_writer::tag('div', 'Vista por programa académico', ['class' => 'local-mai-card-title']);
 echo html_writer::tag(
-    'p',
-    'Muestra, por cada programa académico, el total de cursos y el comportamiento de los usuarios.',
+    'div',
+    'Total de cursos, usuarios y retención por cada programa académico.',
     ['class' => 'local-mai-card-subtitle']
 );
 echo html_writer::end_div();
+echo html_writer::end_div();
+echo html_writer::end_div(); // card-header
 
 echo html_writer::start_div('local-mai-card-body');
 
@@ -662,13 +765,23 @@ echo '</div>'; // tab-pane programas
 echo '<div class="local-mai-tab-pane" data-tabpane="term">';
 
 echo html_writer::start_div('local-mai-card', ['id' => 'local-mai-estructura-term']);
-echo html_writer::start_div('local-mai-card-header');
+
+// header con icono
+echo html_writer::start_div('local-mai-card-header local-mai-card-header--term');
+echo html_writer::start_div('local-mai-card-header-main');
+echo html_writer::tag('span', '<i class="fa-solid fa-layer-group"></i>', [
+    'class' => 'local-mai-card-header-icon'
+]);
+echo html_writer::start_div('local-mai-card-header-text');
+echo html_writer::tag('div', 'Vista por cuatrimestre (detalle por curso)', ['class' => 'local-mai-card-title']);
 echo html_writer::tag(
-    'p',
-    'Desglosa los usuarios por curso dentro del programa académico y cuatrimestre seleccionado. Puedes filtrar por docente o grupo.',
+    'div',
+    'Desglosa usuarios por curso dentro del programa y cuatrimestre seleccionados. Puedes filtrar por docente o grupo.',
     ['class' => 'local-mai-card-subtitle']
 );
 echo html_writer::end_div();
+echo html_writer::end_div();
+echo html_writer::end_div(); // card-header
 
 echo html_writer::start_div('local-mai-card-body');
 
@@ -762,14 +875,26 @@ echo '</div>'; // .local-mai-tabs-content
 
 // --------- CARD EXPORT ----------
 echo html_writer::start_div('local-mai-card local-mai-export-card', ['id' => 'local-mai-estructura-export-card']);
-echo html_writer::start_div('local-mai-card-header');
-echo html_writer::tag('h3', 'Exportar vista actual', ['class' => 'local-mai-card-title']);
+echo html_writer::start_div('local-mai-card-header local-mai-card-header--export');
+echo html_writer::start_div('local-mai-card-header-main');
+echo html_writer::tag('span', '<i class="fa-solid fa-arrow-up-right-from-square"></i>', [
+    'class' => 'local-mai-card-header-icon'
+]);
+echo html_writer::start_div('local-mai-card-header-text');
+echo html_writer::tag('div', 'Exportar vista actual', ['class' => 'local-mai-card-title']);
+echo html_writer::tag(
+    'div',
+    'Descarga la información en Excel, CSV o PDF respetando los filtros de la pestaña activa.',
+    ['class' => 'local-mai-card-subtitle']
+);
 echo html_writer::end_div();
+echo html_writer::end_div();
+echo html_writer::end_div(); // card-header
 
 echo html_writer::start_div('local-mai-card-body');
 echo html_writer::tag(
     'p',
-    'La exportación respeta los filtros de programa académico.',
+    'La exportación respeta el programa/cuatrimestre según la pestaña seleccionada.',
     ['class' => 'local-mai-export-help']
 );
 
@@ -941,7 +1066,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // --------- Render vista general ---------
     function renderGeneral(global) {
         if (!global || !global.total) {
-            generalBody.innerHTML = '<span class="local-mai-help-text">No hay datos para mostrar el resumen global.</span>';
+            generalBody.innerHTML = '<span class=\"local-mai-help-text\">No hay datos para mostrar el resumen global.</span>';
             if (globalChart) {
                 globalChart.destroy();
                 globalChart = null;
@@ -1016,7 +1141,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 programDataTable.destroy();
                 programDataTable = null;
             }
-            progTableEl.innerHTML = '<p class="local-mai-help-text">No se encontraron programas académicos con cursos para estos filtros.</p>';
+            progTableEl.innerHTML = '<p class=\"local-mai-help-text\">No se encontraron programas académicos con cursos para estos filtros.</p>';
             return;
         }
 
@@ -1037,11 +1162,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 programDataTable.destroy();
                 programDataTable = null;
             }
-            progTableEl.innerHTML = '<p class="local-mai-help-text">No hay datos para el programa académico seleccionado.</p>';
+            progTableEl.innerHTML = '<p class=\"local-mai-help-text\">No hay datos para el programa académico seleccionado.</p>';
             return;
         }
 
-        var html = '<table class="local-mai-table" id="local-mai-programs-datatable">';
+        var html = '<table class=\"local-mai-table\" id=\"local-mai-programs-datatable\">';
         html += '<thead><tr>' +
             '<th>Programa académico</th>' +
             '<th>Cursos en el programa</th>' +
@@ -1057,7 +1182,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         dataToShow.forEach(function(ps) {
             var cls = (selectedId !== '0' && String(selectedId) === String(ps.id)) ? 'local-mai-program-highlight' : '';
-            html += '<tr class="' + cls + '">' +
+            html += '<tr class=\"' + cls + '\">' +
                 '<td>' + ps.name + '</td>' +
                 '<td>' + ps.courses + '</td>' +
                 '<td>' + ps.active + '</td>' +
@@ -1074,7 +1199,7 @@ document.addEventListener('DOMContentLoaded', function() {
         html += '</tbody></table>';
         progTableEl.innerHTML = html;
 
-        // DataTable limpia (sin "show entries", en español)
+        // DataTable limpia (sin lengthChange, en español)
         if ($ && $.fn && $.fn.DataTable) {
             if (programDataTable && programDataTable.destroy) {
                 programDataTable.destroy();
@@ -1135,30 +1260,30 @@ document.addEventListener('DOMContentLoaded', function() {
         var pname = (context && context.programname) ? context.programname : '(sin programa)';
         var tname = (context && context.termname) ? context.termname : '(sin cuatrimestre)';
 
-        var header = '<div class="local-mai-term-context">' +
-            '<div><span class="local-mai-term-label">Programa:</span> <strong>' + pname + '</strong></div>' +
-            '<div><span class="local-mai-term-label">Cuatrimestre:</span> <strong>' + tname + '</strong></div>';
+        var header = '<div class=\"local-mai-term-context\">' +
+            '<div><span class=\"local-mai-term-label\">Programa:</span> <strong>' + pname + '</strong></div>' +
+            '<div><span class=\"local-mai-term-label\">Cuatrimestre:</span> <strong>' + tname + '</strong></div>';
 
         if (context && context.teachername) {
-            header += '<div><span class="local-mai-term-label">Docente:</span> <strong>' + context.teachername + '</strong></div>';
+            header += '<div><span class=\"local-mai-term-label\">Docente:</span> <strong>' + context.teachername + '</strong></div>';
         }
         if (context && context.groupname) {
-            header += '<div><span class="local-mai-term-label">Grupo:</span> <strong>' + context.groupname + '</strong></div>';
+            header += '<div><span class=\"local-mai-term-label\">Grupo:</span> <strong>' + context.groupname + '</strong></div>';
         }
         header += '</div>';
 
         if (!termcourses || !termcourses.length) {
-            termSummaryEl.innerHTML = header + '<p class="local-mai-help-text">No se encontraron cursos para los filtros seleccionados. Cambia de programa, cuatrimestre, docente o grupo.</p>';
+            termSummaryEl.innerHTML = header + '<p class=\"local-mai-help-text\">No se encontraron cursos para los filtros seleccionados. Cambia de programa, cuatrimestre, docente o grupo.</p>';
             return;
         }
 
         var total = termstats.total || 0;
-        var summaryHtml = header + '<div class="local-mai-term-stats">';
+        var summaryHtml = header + '<div class=\"local-mai-term-stats\">';
 
         function stat(label, value) {
-            return '<div class="local-mai-stat-box local-mai-stat-box-sm">' +
-                '<div class="local-mai-stat-label">' + label + '</div>' +
-                '<div class="local-mai-stat-value">' + value + '</div>' +
+            return '<div class=\"local-mai-stat-box local-mai-stat-box-sm\">' +
+                '<div class=\"local-mai-stat-label\">' + label + '</div>' +
+                '<div class=\"local-mai-stat-value\">' + value + '</div>' +
                 '</div>';
         }
 
@@ -1174,7 +1299,7 @@ document.addEventListener('DOMContentLoaded', function() {
         termSummaryEl.innerHTML = summaryHtml;
 
         // Tabla detalle por curso
-        var tableHtml = '<table class="local-mai-table" id="local-mai-term-datatable">';
+        var tableHtml = '<table class=\"local-mai-table\" id=\"local-mai-term-datatable\">';
         tableHtml += '<thead><tr>' +
             '<th>Curso</th>' +
             '<th>Usuarios activos</th>' +
@@ -1265,7 +1390,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 termSel.appendChild(o);
             });
 
-            if (currentTerm && termSel.querySelector('option[value="' + currentTerm + '"]')) {
+            if (currentTerm && termSel.querySelector('option[value=\"' + currentTerm + '\"]')) {
                 termSel.value = currentTerm;
             } else {
                 termSel.value = '0';
@@ -1289,7 +1414,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 teacherSel.appendChild(o);
             });
 
-            if (currentTeacher && teacherSel.querySelector('option[value="' + currentTeacher + '"]')) {
+            if (currentTeacher && teacherSel.querySelector('option[value=\"' + currentTeacher + '\"]')) {
                 teacherSel.value = currentTeacher;
             } else {
                 teacherSel.value = '0';
@@ -1307,13 +1432,13 @@ document.addEventListener('DOMContentLoaded', function() {
             groupSel.appendChild(optG);
 
             filtersData.groups.forEach(function(g) {
-                var o = document.createElement('option');
+            var o = document.createElement('option');
                 o.value = g.id;
                 o.textContent = g.name;
                 groupSel.appendChild(o);
             });
 
-            if (currentGroup && groupSel.querySelector('option[value="' + currentGroup + '"]')) {
+            if (currentGroup && groupSel.querySelector('option[value=\"' + currentGroup + '\"]')) {
                 groupSel.value = currentGroup;
             } else {
                 groupSel.value = '0';
@@ -1333,8 +1458,8 @@ document.addEventListener('DOMContentLoaded', function() {
             progChart = null;
         }
 
-        generalBody.innerHTML = '<div class="local-mai-inline-loading"><div class="local-mai-loading-spinner"></div><span>Cargando información general...</span></div>';
-        progTableEl.innerHTML = '<div class="local-mai-inline-loading"><div class="local-mai-loading-spinner"></div><span>Cargando programas académicos...</span></div>';
+        generalBody.innerHTML = '<div class=\"local-mai-inline-loading\"><div class=\"local-mai-loading-spinner\"></div><span>Cargando información general...</span></div>';
+        progTableEl.innerHTML = '<div class=\"local-mai-inline-loading\"><div class=\"local-mai-loading-spinner\"></div><span>Cargando programas académicos...</span></div>';
 
         if (programDataTable && programDataTable.destroy) {
             programDataTable.destroy();
@@ -1365,8 +1490,8 @@ document.addEventListener('DOMContentLoaded', function() {
             renderPrograms(cachedProgramStats, f.programid);
         }).catch(function(err) {
             console.error(err);
-            generalBody.innerHTML = '<span class="local-mai-help-text">Ocurrió un error al cargar la información general. Intenta recargar la página.</span>';
-            progTableEl.innerHTML  = '<span class="local-mai-help-text">Ocurrió un error al cargar los programas académicos.</span>';
+            generalBody.innerHTML = '<span class=\"local-mai-help-text\">Ocurrió un error al cargar la información general. Intenta recargar la página.</span>';
+            progTableEl.innerHTML  = '<span class=\"local-mai-help-text\">Ocurrió un error al cargar los programas académicos.</span>';
         });
     }
 
@@ -1375,20 +1500,20 @@ document.addEventListener('DOMContentLoaded', function() {
         var f = getTermFilters();
 
         if (!f.programid || f.programid === '0') {
-            termSummaryEl.innerHTML = '<span class="local-mai-help-text">Selecciona un programa académico para cargar cuatrimestres y cursos.</span>';
+            termSummaryEl.innerHTML = '<span class=\"local-mai-help-text\">Selecciona un programa académico para cargar cuatrimestres y cursos.</span>';
             termTableEl.innerHTML   = '';
             termChartEl.innerHTML   = '';
             return;
         }
 
         if (!f.termid || f.termid === '0') {
-            termSummaryEl.innerHTML = '<span class="local-mai-help-text">Selecciona un cuatrimestre para ver el detalle por curso.</span>';
+            termSummaryEl.innerHTML = '<span class=\"local-mai-help-text\">Selecciona un cuatrimestre para ver el detalle por curso.</span>';
             termTableEl.innerHTML   = '';
             termChartEl.innerHTML   = '';
             return;
         }
 
-        termSummaryEl.innerHTML = '<div class="local-mai-inline-loading"><div class="local-mai-loading-spinner"></div><span>Cargando detalle por cuatrimestre...</span></div>';
+        termSummaryEl.innerHTML = '<div class=\"local-mai-inline-loading\"><div class=\"local-mai-loading-spinner\"></div><span>Cargando detalle por cuatrimestre...</span></div>';
         termTableEl.innerHTML   = '';
         termChartEl.innerHTML   = '';
 
@@ -1423,7 +1548,7 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }).catch(function(err) {
             console.error(err);
-            termSummaryEl.innerHTML = '<span class="local-mai-help-text">Ocurrió un error al cargar el detalle por cuatrimestre.</span>';
+            termSummaryEl.innerHTML = '<span class=\"local-mai-help-text\">Ocurrió un error al cargar el detalle por cuatrimestre.</span>';
             termTableEl.innerHTML   = '';
             termChartEl.innerHTML   = '';
         });
@@ -1448,25 +1573,25 @@ document.addEventListener('DOMContentLoaded', function() {
         }
 
         if (!pid || pid === '0') {
-            termSummaryEl.innerHTML = '<span class="local-mai-help-text">Selecciona un programa académico para cargar cuatrimestres y cursos.</span>';
+            termSummaryEl.innerHTML = '<span class=\"local-mai-help-text\">Selecciona un programa académico para cargar cuatrimestres y cursos.</span>';
             termTableEl.innerHTML   = '';
             termChartEl.innerHTML   = '';
             return;
         }
 
-        termSummaryEl.innerHTML = '<div class="local-mai-inline-loading"><div class="local-mai-loading-spinner"></div><span>Actualizando cuatrimestres y filtros...</span></div>';
+        termSummaryEl.innerHTML = '<div class=\"local-mai-inline-loading\"><div class=\"local-mai-loading-spinner\"></div><span>Actualizando cuatrimestres y filtros...</span></div>';
 
         // Si ya tenemos filtros en cache para este programa, usamos eso sin llamar al servidor
         if (cachedFiltersByProgram[pid]) {
             updateFilterOptions(cachedFiltersByProgram[pid]);
-            termSummaryEl.innerHTML = '<span class="local-mai-help-text">Ahora selecciona un cuatrimestre para ver el detalle por curso.</span>';
+            termSummaryEl.innerHTML = '<span class=\"local-mai-help-text\">Ahora selecciona un cuatrimestre para ver el detalle por curso.</span>';
             termTableEl.innerHTML   = '';
             termChartEl.innerHTML   = '';
             return;
         }
 
         var params = new URLSearchParams();
-        params.append('mode',      'filters'); // <- LLAMADA LIGERA SOLO PARA FILTROS
+        params.append('mode',      'filters'); // llamada ligera para filtros
         params.append('programid', pid);
         params.append('termid',    0);
         params.append('teacherid', 0);
@@ -1485,12 +1610,12 @@ document.addEventListener('DOMContentLoaded', function() {
             cachedFiltersByProgram[pid] = filters;
             updateFilterOptions(filters);
 
-            termSummaryEl.innerHTML = '<span class="local-mai-help-text">Selecciona un cuatrimestre para ver el detalle por curso.</span>';
+            termSummaryEl.innerHTML = '<span class=\"local-mai-help-text\">Selecciona un cuatrimestre para ver el detalle por curso.</span>';
             termTableEl.innerHTML   = '';
             termChartEl.innerHTML   = '';
         }).catch(function(err) {
             console.error(err);
-            termSummaryEl.innerHTML = '<span class="local-mai-help-text">Ocurrió un error al actualizar los filtros para este programa.</span>';
+            termSummaryEl.innerHTML = '<span class=\"local-mai-help-text\">Ocurrió un error al actualizar los filtros para este programa.</span>';
             termTableEl.innerHTML   = '';
             termChartEl.innerHTML   = '';
         });
@@ -1602,7 +1727,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Carga inicial
     loadGeneralPrograms();
-    termSummaryEl.innerHTML = '<span class="local-mai-help-text">Selecciona un programa académico para cargar los cuatrimestres disponibles y después elige un cuatrimestre para ver el detalle por curso.</span>';
+    termSummaryEl.innerHTML = '<span class=\"local-mai-help-text\">Selecciona un programa académico para cargar los cuatrimestres disponibles y después elige un cuatrimestre para ver el detalle por curso.</span>';
 });
 </script>
 

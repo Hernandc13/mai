@@ -4,16 +4,20 @@
     Dashboard principal del plugin MAI.
 }}
 
+<!-- Font Awesome para íconos del dashboard -->
+<link rel="stylesheet"
+      href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
+      crossorigin="anonymous"
+      referrerpolicy="no-referrer" />
+
 <style>
 .local-mai-dashboard-wrapper {
     max-width: 980px;
     margin: 0 auto;
     padding: 8px 0 24px;
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
+    font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-/* Paleta MAI */
-.local-mai-dashboard-wrapper {
+    /* Paleta MAI */
     --mai-maroon: #8C253E;
     --mai-orange: #FF7000;
     --mai-bg-soft: #f8fafc;
@@ -66,7 +70,7 @@
     gap: 18px;
 }
 
-/* Card */
+/* Card módulo */
 .local-mai-module-card {
     position: relative;
     border-radius: 16px;
@@ -99,6 +103,7 @@
     margin-bottom: 10px;
 }
 
+/* Icono cuadrado con FA */
 .local-mai-module-icon {
     width: 42px;
     height: 42px;
@@ -106,7 +111,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.2rem;
+    font-size: 1.3rem;
     background: rgba(140, 37, 62, 0.04);
     color: var(--mai-maroon);
 }
@@ -122,12 +127,19 @@
     letter-spacing: .08em;
 }
 
-/* Título y descripción (por si se amplía en el futuro) */
+/* Título y descripción */
 .local-mai-module-title {
-    margin: 0;
+    margin: 0 0 4px;
     font-size: 0.95rem;
     font-weight: 600;
     color: var(--mai-text-main);
+}
+
+.local-mai-module-desc {
+    margin: 0;
+    font-size: 0.8rem;
+    color: var(--mai-text-muted);
+    min-height: 36px;
 }
 
 /* Pie: link */
@@ -154,7 +166,7 @@
     font-size: 0.9rem;
 }
 
-/* Variaciones por módulo (ligero acento) */
+/* Variaciones por módulo */
 .local-mai-module-participacion .local-mai-module-icon {
     background: rgba(255, 112, 0, 0.06);
     color: var(--mai-orange);
@@ -172,6 +184,11 @@
         rgba(255, 112, 0, 0.10)
     );
     color: var(--mai-maroon);
+}
+
+.local-mai-module-notificaciones .local-mai-module-icon {
+    background: rgba(37, 99, 235, 0.06);
+    color: #2563eb;
 }
 
 /* Responsive */
@@ -198,7 +215,7 @@
             </div>
         </div>
         <div class="local-mai-header-tag">
-            Dashboard MAI
+            Menú
         </div>
     </div>
 
@@ -208,15 +225,18 @@
         <a href="./participacion.php" class="local-mai-module-card local-mai-module-participacion">
             <div class="local-mai-module-top">
                 <div class="local-mai-module-icon">
-                    <i class="fa fa-users" aria-hidden="true"></i>
+                    <i class="fa-solid fa-user-group" aria-hidden="true"></i>
                 </div>
                 <span class="local-mai-module-badge">Participación</span>
             </div>
             <h3 class="local-mai-module-title">Seguimiento de participación</h3>
+            <p class="local-mai-module-desc">
+                Vista general de actividad, accesos y participación de los estudiantes.
+            </p>
             <div class="local-mai-module-footer">
                 <span class="local-mai-module-link">
                     Ver módulo
-                    <span>➜</span>
+                    <span><i class="fa-solid fa-arrow-right-long"></i></span>
                 </span>
             </div>
         </a>
@@ -225,15 +245,18 @@
         <a href="./estructura.php" class="local-mai-module-card local-mai-module-estructura">
             <div class="local-mai-module-top">
                 <div class="local-mai-module-icon">
-                    <i class="fa fa-sitemap" aria-hidden="true"></i>
+                    <i class="fa-solid fa-diagram-project" aria-hidden="true"></i>
                 </div>
                 <span class="local-mai-module-badge">Estructura</span>
             </div>
             <h3 class="local-mai-module-title">Estructura académica</h3>
+            <p class="local-mai-module-desc">
+                Reportes por programa, cuatrimestre y general.
+            </p>
             <div class="local-mai-module-footer">
                 <span class="local-mai-module-link">
                     Ver módulo
-                    <span>➜</span>
+                    <span><i class="fa-solid fa-arrow-right-long"></i></span>
                 </span>
             </div>
         </a>
@@ -242,15 +265,40 @@
         <a href="./panel/index.php" class="local-mai-module-card local-mai-module-panel">
             <div class="local-mai-module-top">
                 <div class="local-mai-module-icon">
-                    <i class="fa fa-chart-line" aria-hidden="true"></i>
+                    <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
                 </div>
                 <span class="local-mai-module-badge">Panel</span>
             </div>
-            <h3 class="local-mai-module-title">Panel de control MAI</h3>
+            <h3 class="local-mai-module-title">Panel de control</h3>
+            <p class="local-mai-module-desc">
+                Dashboard con gráficos interactivos.
+            </p>
             <div class="local-mai-module-footer">
                 <span class="local-mai-module-link">
                     Abrir panel
-                    <span>➜</span>
+                    <span><i class="fa-solid fa-arrow-right-long"></i></span>
+                </span>
+            </div>
+        </a>
+
+        <!-- Envío automatizado de reportes + Alertas -->
+        <a href="./notificaciones/index.php" class="local-mai-module-card local-mai-module-notificaciones">
+            <div class="local-mai-module-top">
+                <div class="local-mai-module-icon">
+                    <i class="fa-solid fa-envelope-open-text" aria-hidden="true"></i>
+                </div>
+                <span class="local-mai-module-badge">Automatización</span>
+            </div>
+            <h3 class="local-mai-module-title">
+                Reportes automáticos y alertas
+            </h3>
+            <p class="local-mai-module-desc">
+                Configura envíos programados y alertas inteligentes de inactividad y seguimiento.
+            </p>
+            <div class="local-mai-module-footer">
+                <span class="local-mai-module-link">
+                    Configurar módulo
+                    <span><i class="fa-solid fa-arrow-right-long"></i></span>
                 </span>
             </div>
         </a>

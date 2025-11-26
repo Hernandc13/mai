@@ -10,11 +10,13 @@ require(__DIR__ . '/../../../config.php');
 
 require_login();
 
+global $DB;
+
 $systemcontext = context_system::instance();
 require_capability('local/mai:viewreport', $systemcontext);
 
 $pagetitle = 'Panel de control';
-echo $OUTPUT->heading($pagetitle);
+
 $PAGE->set_url(new moodle_url('/local/mai/panel/index.php'));
 $PAGE->set_context($systemcontext);
 $PAGE->set_pagelayout('report');
@@ -22,7 +24,23 @@ $PAGE->set_title($pagetitle);
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading($pagetitle);
-global $DB;
+// Botón para volver al dashboard principal de MAI.
+$backurl = new moodle_url('/local/mai/index.php');
+
+echo html_writer::start_div('local-mai-panel-back');
+
+$icon  = html_writer::tag('i', '', [
+    'class' => 'fa-solid fa-arrow-left local-mai-btn-back-icon',
+    'aria-hidden' => 'true'
+]);
+$label = html_writer::tag('span', 'Volver al Menú');
+
+echo html_writer::tag('a', $icon . $label, [
+    'href'  => $backurl->out(false),
+    'class' => 'local-mai-btn-back'
+]);
+
+echo html_writer::end_div();
 
 // ======================
 // Filtros base (programa / cuatrimestre)
@@ -44,14 +62,17 @@ $termoptions = [0 => 'Todos los cuatrimestres'];
 // CSS
 // ======================
 $css = "
-#page-local-mai-panel-index {
-    background: radial-gradient(circle at top left, #f9fafb 0, #ffffff 55%, #f1f5f9 100%);
+:root {
     --mai-maroon: #8C253E;
     --mai-orange: #FF7000;
     --mai-bg-soft: #f8fafc;
     --mai-border-soft: #e5e7eb;
     --mai-text-main: #111827;
     --mai-text-muted: #6b7280;
+}
+
+#page-local-mai-panel-index {
+    background: radial-gradient(circle at top left, #f9fafb 0, #ffffff 55%, #f1f5f9 100%);
 }
 
 /* Layout principal */
@@ -66,25 +87,32 @@ $css = "
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
-/* Título y descripción */
+/* Encabezado del panel */
+.local-mai-panel-header {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
 .local-mai-panel-title {
     font-size: 1.5rem;
     font-weight: 700;
-    margin-bottom: 4px;
+    margin: 0;
     color: var(--mai-maroon);
 }
 
 .local-mai-panel-subtitle {
     color: var(--mai-text-muted);
-    margin-bottom: 6px;
+    margin: 0;
     font-size: 0.95rem;
 }
 
 .local-mai-panel-bullets {
-    margin: 0 0 10px 0;
+    margin: 6px 0 8px 0;
     padding-left: 18px;
     color: var(--mai-text-muted);
-    font-size: 0.85rem;
+    font-size: 0.82rem;
 }
 .local-mai-panel-bullets li {
     margin-bottom: 2px;
@@ -101,7 +129,7 @@ $css = "
     box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
     overflow: hidden;
     background-clip: padding-box, border-box;
-    padding: 14px 18px 18px;
+    padding: 0;
     transition: transform 0.16s ease, box-shadow 0.16s ease;
 }
 
@@ -110,10 +138,44 @@ $css = "
     box-shadow: 0 22px 45px rgba(15,23,42,0.14);
 }
 
-.local-mai-card h3 {
-    margin-top: 0;
-    margin-bottom: 6px;
-    font-size: 1.06rem;
+/* Header de card con icono */
+.local-mai-card-header {
+    padding: 10px 18px 8px;
+    border-bottom: 1px solid #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: linear-gradient(to right,
+        rgba(140,37,62,0.04),
+        rgba(255,112,0,0.03));
+}
+
+.local-mai-card-header-main {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.local-mai-card-header-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(140,37,62,0.08);
+    color: var(--mai-maroon);
+    font-size: 1rem;
+}
+
+.local-mai-card-header-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.local-mai-card-title {
+    margin: 0;
+    font-size: 1.02rem;
     font-weight: 600;
     color: var(--mai-text-main);
 }
@@ -121,7 +183,29 @@ $css = "
 .local-mai-card-subtitle {
     font-size: 0.8rem;
     color: var(--mai-text-muted);
-    margin-bottom: 10px;
+    margin: 2px 0 0;
+}
+
+/* Variantes de header por card */
+.local-mai-card-header--global .local-mai-card-header-icon {
+    background: rgba(37, 99, 235, 0.10);
+    color: #2563eb;
+}
+.local-mai-card-header--progress .local-mai-card-header-icon {
+    background: rgba(14, 165, 233, 0.14);
+    color: #0ea5e9;
+}
+.local-mai-card-header--terms .local-mai-card-header-icon {
+    background: rgba(249, 115, 22, 0.14);
+    color: var(--mai-orange);
+}
+.local-mai-card-header--filters .local-mai-card-header-icon {
+    background: rgba(148, 163, 184, 0.16);
+    color: var(--mai-text-main);
+}
+
+.local-mai-card-body {
+    padding: 12px 18px 16px;
 }
 
 /* Filtros panel */
@@ -286,30 +370,136 @@ $css = "
         min-width: 100%;
     }
 }
+    .local-mai-panel-filters-box {
+    border-radius: 18px;
+    border: 1px solid rgba(140,37,62,0.08);
+    background: linear-gradient(135deg, #f8fafc, #eef2ff);
+    padding: 12px 16px 14px;
+    box-shadow: 0 10px 26px rgba(15,23,42,0.05);
+}
+
+/* NUEVO: header de filtros con icono */
+.local-mai-panel-filters-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.local-mai-panel-filters-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(140,37,62,0.10);
+    color: var(--mai-maroon);
+    font-size: 0.9rem;
+}
+
+.local-mai-panel-filters-text {
+    display: flex;
+    flex-direction: column;
+}
+
+.local-mai-panel-filters-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 0 0 2px;
+    color: var(--mai-text-main);
+}
+
+.local-mai-panel-filters-help {
+    font-size: 0.8rem;
+    color: var(--mai-text-muted);
+    margin: 0;
+}
+    /* Botón regresar al dashboard MAI */
+.local-mai-panel-back {
+    display: flex;
+    justify-content: flex-start; /* cambia a flex-end si lo quieres a la derecha */
+    margin-bottom: 6px;
+}
+
+.local-mai-btn-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-radius: 999px;
+    border: 1px solid var(--mai-border-soft);
+    background: #ffffff;
+    color: var(--mai-text-muted);
+    font-size: 0.8rem;
+    font-weight: 500;
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease, color .15s ease;
+}
+
+.local-mai-btn-back:hover,
+.local-mai-btn-back:focus {
+    border-color: rgba(140,37,62,0.35);
+    color: var(--mai-maroon);
+    box-shadow: 0 8px 18px rgba(15,23,42,0.10);
+    transform: translateY(-1px);
+}
+
+.local-mai-btn-back-icon {
+    font-size: 0.85rem;
+}
 ";
 echo html_writer::tag('style', $css);
+
+// Font Awesome para iconos de los headers
+echo html_writer::empty_tag('link', [
+    'rel'  => 'stylesheet',
+    'href' => 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css'
+]);
 
 // ======================
 // Layout principal
 // ======================
 echo html_writer::start_div('local-mai-panel-layout');
 
-// ======================
 // Encabezado
-// ======================
+echo html_writer::start_div('local-mai-panel-header');
 echo html_writer::tag(
     'div',
-    'Visualiza indicadores clave de participación, retención y avance de actividades.',
+    'Visualiza indicadores globales de participación, retención y avance de actividades.',
     ['class' => 'local-mai-panel-subtitle']
 );
+echo html_writer::end_div(); // panel-header
 
 // ======================
 // Filtros (programa / cuatrimestre)
 // ======================
 echo html_writer::start_div('local-mai-panel-filters-box');
 
-echo html_writer::tag('div', 'Filtros del panel de control', ['class' => 'local-mai-panel-filters-title']);
+// Header: icono de filtro + textos
+echo html_writer::start_div('local-mai-panel-filters-header');
 
+// Icono
+echo html_writer::tag(
+    'span',
+    '<i class="fa-solid fa-filter"></i>',
+    ['class' => 'local-mai-panel-filters-icon']
+);
+
+// Textos
+echo html_writer::start_div('local-mai-panel-filters-text');
+echo html_writer::tag('div', 'Filtros de búsqueda', ['class' => 'local-mai-panel-filters-title']);
+echo html_writer::tag(
+    'div',
+    'Elige el programa y, opcionalmente, un cuatrimestre para ajustar los gráficos.',
+    ['class' => 'local-mai-panel-filters-help']
+);
+echo html_writer::end_div(); // .local-mai-panel-filters-text
+
+echo html_writer::end_div(); // .local-mai-panel-filters-header
+
+// Formulario de filtros
 echo html_writer::start_tag('form', [
     'method' => 'get',
     'class'  => 'local-mai-panel-filters-form',
@@ -350,12 +540,25 @@ echo html_writer::end_div(); // filtros
 // Card 1: Donut + barras por programa (retención)
 // ======================
 echo html_writer::start_div('local-mai-card');
-echo html_writer::tag('h3', 'Participación global y retención por programa');
+
+// header card 1
+echo html_writer::start_div('local-mai-card-header local-mai-card-header--global');
+echo html_writer::start_div('local-mai-card-header-main');
+echo html_writer::tag('span', '<i class="fa-solid fa-chart-pie"></i>', [
+    'class' => 'local-mai-card-header-icon'
+]);
+echo html_writer::start_div('local-mai-card-header-text');
+echo html_writer::tag('div', 'Participación global y retención por programa', ['class' => 'local-mai-card-title']);
 echo html_writer::tag(
     'div',
-    'A la izquierda se muestra la distribución de estudiantes; a la derecha, la retención promedio por programa académico.',
+    'Distribución de estudiantes y retención promedio agregada por programa académico.',
     ['class' => 'local-mai-card-subtitle']
 );
+echo html_writer::end_div(); // header-text
+echo html_writer::end_div(); // header-main
+echo html_writer::end_div(); // card-header
+
+echo html_writer::start_div('local-mai-card-body');
 
 echo html_writer::start_div('local-mai-charts-row');
 
@@ -380,18 +583,32 @@ echo html_writer::end_div();
 echo html_writer::end_div();
 
 echo html_writer::end_div(); // charts-row
+echo html_writer::end_div(); // card-body
 echo html_writer::end_div(); // card
 
 // ======================
 // Card 2: Promedio de actividades completadas
 // ======================
 echo html_writer::start_div('local-mai-card');
-echo html_writer::tag('h3', 'Promedio de actividades completadas');
+
+// header card 2
+echo html_writer::start_div('local-mai-card-header local-mai-card-header--progress');
+echo html_writer::start_div('local-mai-card-header-main');
+echo html_writer::tag('span', '<i class="fa-solid fa-list-check"></i>', [
+    'class' => 'local-mai-card-header-icon'
+]);
+echo html_writer::start_div('local-mai-card-header-text');
+echo html_writer::tag('div', 'Promedio de actividades completadas', ['class' => 'local-mai-card-title']);
 echo html_writer::tag(
     'div',
-    'Muestra el avance promedio (porcentaje de actividades completadas) por programa académico.',
+    'Porcentaje promedio de actividades completadas en cada programa académico.',
     ['class' => 'local-mai-card-subtitle']
 );
+echo html_writer::end_div();
+echo html_writer::end_div();
+echo html_writer::end_div(); // card-header
+
+echo html_writer::start_div('local-mai-card-body');
 
 echo html_writer::tag('div', '', [
     'id'    => 'local-mai-panel-bar-progress',
@@ -400,18 +617,32 @@ echo html_writer::tag('div', '', [
 echo html_writer::start_div('local-mai-inline-stats', ['id' => 'local-mai-panel-bar-progress-stats']);
 echo html_writer::end_div();
 
+echo html_writer::end_div(); // card-body
 echo html_writer::end_div(); // card
 
 // ======================
 // Card 3: Comparación entre cuatrimestres
 // ======================
 echo html_writer::start_div('local-mai-card');
-echo html_writer::tag('h3', 'Comparación de retención entre cuatrimestres');
+
+// header card 3
+echo html_writer::start_div('local-mai-card-header local-mai-card-header--terms');
+echo html_writer::start_div('local-mai-card-header-main');
+echo html_writer::tag('span', '<i class="fa-solid fa-layer-group"></i>', [
+    'class' => 'local-mai-card-header-icon'
+]);
+echo html_writer::start_div('local-mai-card-header-text');
+echo html_writer::tag('div', 'Comparación de retención entre cuatrimestres', ['class' => 'local-mai-card-title']);
 echo html_writer::tag(
     'div',
-    'Selecciona un programa en los filtros superiores para comparar la tasa de retención entre sus cuatrimestres activos.',
+    'Compara la tasa de retención entre los cuatrimestres del programa seleccionado.',
     ['class' => 'local-mai-card-subtitle']
 );
+echo html_writer::end_div();
+echo html_writer::end_div();
+echo html_writer::end_div(); // card-header
+
+echo html_writer::start_div('local-mai-card-body');
 
 echo html_writer::tag('div', '', [
     'id'    => 'local-mai-panel-bar-terms',
@@ -420,6 +651,7 @@ echo html_writer::tag('div', '', [
 echo html_writer::start_div('local-mai-inline-stats', ['id' => 'local-mai-panel-bar-terms-stats']);
 echo html_writer::end_div();
 
+echo html_writer::end_div(); // card-body
 echo html_writer::end_div(); // card
 
 echo html_writer::end_div(); // .local-mai-panel-layout
@@ -484,12 +716,12 @@ document.addEventListener('DOMContentLoaded', function() {
         donutStats.innerHTML = '';
 
         if (!global || !global.total) {
-            donutEl.innerHTML = '<p class="local-mai-help-text">No hay datos para la distribución actual.</p>';
+            donutEl.innerHTML = '<p class=\"local-mai-help-text\">No hay datos para la distribución actual.</p>';
             return;
         }
 
         if (typeof ApexCharts === 'undefined') {
-            donutEl.innerHTML = '<p class="local-mai-help-text">ApexCharts no está disponible.</p>';
+            donutEl.innerHTML = '<p class=\"local-mai-help-text\">ApexCharts no está disponible.</p>';
             return;
         }
 
@@ -551,12 +783,12 @@ document.addEventListener('DOMContentLoaded', function() {
         barProgStats.innerHTML = '';
 
         if (!programstats || !programstats.length) {
-            barProgEl.innerHTML = '<p class="local-mai-help-text">No hay programas con datos para los filtros seleccionados.</p>';
+            barProgEl.innerHTML = '<p class=\"local-mai-help-text\">No hay programas con datos para los filtros seleccionados.</p>';
             return;
         }
 
         if (typeof ApexCharts === 'undefined') {
-            barProgEl.innerHTML = '<p class="local-mai-help-text">ApexCharts no está disponible.</p>';
+            barProgEl.innerHTML = '<p class=\"local-mai-help-text\">ApexCharts no está disponible.</p>';
             return;
         }
 
@@ -622,12 +854,12 @@ document.addEventListener('DOMContentLoaded', function() {
         barProgressStats.innerHTML = '';
 
         if (!programstats || !programstats.length) {
-            barProgressEl.innerHTML = '<p class="local-mai-help-text">No hay datos de avance promedio para los programas seleccionados.</p>';
+            barProgressEl.innerHTML = '<p class=\"local-mai-help-text\">No hay datos de avance promedio para los programas seleccionados.</p>';
             return;
         }
 
         if (typeof ApexCharts === 'undefined') {
-            barProgressEl.innerHTML = '<p class="local-mai-help-text">ApexCharts no está disponible.</p>';
+            barProgressEl.innerHTML = '<p class=\"local-mai-help-text\">ApexCharts no está disponible.</p>';
             return;
         }
 
@@ -700,17 +932,17 @@ document.addEventListener('DOMContentLoaded', function() {
         barTermsStats.innerHTML = '';
 
         if (!programid || programid === '0') {
-            barTermsEl.innerHTML = '<p class="local-mai-help-text">Selecciona un programa para comparar la retención entre sus cuatrimestres.</p>';
+            barTermsEl.innerHTML = '<p class=\"local-mai-help-text\">Selecciona un programa para comparar la retención entre sus cuatrimestres.</p>';
             return;
         }
 
         if (!termsstats || !termsstats.length) {
-            barTermsEl.innerHTML = '<p class="local-mai-help-text">No hay datos por cuatrimestre para este programa.</p>';
+            barTermsEl.innerHTML = '<p class=\"local-mai-help-text\">No hay datos por cuatrimestre para este programa.</p>';
             return;
         }
 
         if (typeof ApexCharts === 'undefined') {
-            barTermsEl.innerHTML = '<p class="local-mai-help-text">ApexCharts no está disponible.</p>';
+            barTermsEl.innerHTML = '<p class=\"local-mai-help-text\">ApexCharts no está disponible.</p>';
             return;
         }
 
@@ -789,7 +1021,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 termSel.appendChild(o);
             });
 
-            if (currentTerm && termSel.querySelector('option[value="' + currentTerm + '"]')) {
+            if (currentTerm && termSel.querySelector('option[value=\"' + currentTerm + '\"]')) {
                 termSel.value = currentTerm;
             } else {
                 termSel.value = '0';
@@ -803,7 +1035,6 @@ document.addEventListener('DOMContentLoaded', function() {
             return;
         }
 
-        // Feedback rápido en el select
         termSel.innerHTML = '';
         var optLoading = document.createElement('option');
         optLoading.value = '0';
@@ -841,10 +1072,10 @@ document.addEventListener('DOMContentLoaded', function() {
     function loadPanel(filters) {
         clearCharts();
 
-        donutEl.innerHTML = '<div class="local-mai-inline-loading"><div class="local-mai-inline-spinner"></div><span>Cargando distribución de estudiantes...</span></div>';
-        barProgEl.innerHTML = '<div class="local-mai-inline-loading"><div class="local-mai-inline-spinner"></div><span>Cargando retención por programa...</span></div>';
-        barProgressEl.innerHTML = '<div class="local-mai-inline-loading"><div class="local-mai-inline-spinner"></div><span>Cargando promedio de actividades completadas...</span></div>';
-        barTermsEl.innerHTML = '<div class="local-mai-inline-loading"><div class="local-mai-inline-spinner"></div><span>Cargando comparación por cuatrimestre...</span></div>';
+        donutEl.innerHTML = '<div class=\"local-mai-inline-loading\"><div class=\"local-mai-inline-spinner\"></div><span>Cargando distribución de estudiantes...</span></div>';
+        barProgEl.innerHTML = '<div class=\"local-mai-inline-loading\"><div class=\"local-mai-inline-spinner\"></div><span>Cargando retención por programa...</span></div>';
+        barProgressEl.innerHTML = '<div class=\"local-mai-inline-loading\"><div class=\"local-mai-inline-spinner\"></div><span>Cargando promedio de actividades completadas...</span></div>';
+        barTermsEl.innerHTML = '<div class=\"local-mai-inline-loading\"><div class=\"local-mai-inline-spinner\"></div><span>Cargando comparación por cuatrimestre...</span></div>';
 
         donutStats.innerHTML = '';
         barProgStats.innerHTML = '';
@@ -874,7 +1105,7 @@ document.addEventListener('DOMContentLoaded', function() {
             updateFilterOptions(data.filters || {});
         }).catch(function(err) {
             console.error(err);
-            donutEl.innerHTML = '<p class="local-mai-help-text" style="color:#b91c1c;">Error al cargar los datos del panel.</p>';
+            donutEl.innerHTML = '<p class=\"local-mai-help-text\" style=\"color:#b91c1c;\">Error al cargar los datos del panel.</p>';
             barProgEl.innerHTML = '';
             barProgressEl.innerHTML = '';
             barTermsEl.innerHTML = '';
@@ -890,8 +1121,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     if (programSel) {
         programSel.addEventListener('change', function() {
-            // Solo actualizamos los cuatrimestres. La recarga pesada del panel
-            // se hace al dar clic en "Aplicar filtro".
+            // Solo actualiza cuatrimestres; la recarga pesada se hace con el botón.
             loadTermsForProgram(programSel.value);
         });
     }
