@@ -27,6 +27,7 @@ $PAGE->requires->jquery();
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading($pagetitle);
+
 // Botón para volver al dashboard principal de MAI.
 $backurl = new moodle_url('/local/mai/index.php');
 
@@ -44,6 +45,7 @@ echo html_writer::tag('a', $icon . $label, [
 ]);
 
 echo html_writer::end_div();
+
 // Font Awesome (íconos exportación / headers)
 echo '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />';
 
@@ -437,6 +439,22 @@ $css = "
     color: var(--mai-text-muted);
 }
 
+/* Detalle de color en encabezados activos / inactivos / nunca ingresaron */
+.local-mai-table th.local-mai-th-active {
+    background-color: #dcfce7;
+    color: #166534;
+}
+
+.local-mai-table th.local-mai-th-inactive {
+    background-color: #fef9c3;
+    color: #92400e;
+}
+
+.local-mai-table th.local-mai-th-never {
+    background-color: #fee2e2;
+    color: #b91c1c;
+}
+
 .local-mai-program-highlight {
     background-color: #e0f2fe;
 }
@@ -580,10 +598,11 @@ $css = "
 .local-mai-table tbody tr:hover {
     background-color: #f9fafb;
 }
-    /* Botón regresar al dashboard MAI */
+
+/* Botón regresar al dashboard MAI */
 .local-mai-panel-back {
     display: flex;
-    justify-content: flex-start; /* cambia a flex-end si lo quieres a la derecha */
+    justify-content: flex-start;
     margin-bottom: 6px;
 }
 
@@ -1003,6 +1022,19 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     };
 
+    // Colores corporativos aleatorios (para programas/cuatrimestres)
+    var maiBaseColors = ['#8C253E', '#FF7000'];
+    function maiRandomColor() {
+        return maiBaseColors[Math.floor(Math.random() * maiBaseColors.length)];
+    }
+    function maiRandomColorArray(len) {
+        var out = [];
+        for (var i = 0; i < len; i++) {
+            out.push(maiRandomColor());
+        }
+        return out;
+    }
+
     // ---------- Tabs MAI ----------
     var tabButtons = document.querySelectorAll('.local-mai-tab-btn');
     var tabPanes   = document.querySelectorAll('.local-mai-tab-pane');
@@ -1112,6 +1144,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 },
                 labels: ['Usuarios activos', 'Usuarios inactivos', 'Usuarios que nunca ingresaron'],
                 series: [global.active, global.inactive, global.never],
+                colors: ['#16a34a', '#facc15', '#dc2626'], // verde, amarillo, rojo
                 dataLabels: {
                     enabled: true
                 },
@@ -1170,9 +1203,9 @@ document.addEventListener('DOMContentLoaded', function() {
         html += '<thead><tr>' +
             '<th>Programa académico</th>' +
             '<th>Cursos en el programa</th>' +
-            '<th>Usuarios activos</th>' +
-            '<th>Usuarios inactivos</th>' +
-            '<th>Usuarios que nunca ingresaron</th>' +
+            '<th class=\"local-mai-th-active\">Usuarios activos</th>' +
+            '<th class=\"local-mai-th-inactive\">Usuarios inactivos</th>' +
+            '<th class=\"local-mai-th-never\">Usuarios que nunca ingresaron</th>' +
             '<th>Usuarios inscritos</th>' +
             '<th>Retención de usuarios activos (%)</th>' +
             '</tr></thead><tbody>';
@@ -1223,6 +1256,10 @@ document.addEventListener('DOMContentLoaded', function() {
                     type: 'bar',
                     height: 260
                 },
+                    title: {
+                    text: 'Porcentaje de Retención',
+                    align: 'center'
+                },
                 series: [{
                     name: 'Retención de usuarios activos (%)',
                     data: dataRetention
@@ -1234,6 +1271,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     enabled: true,
                     formatter: function (val) {
                         return val + '%';
+                    }
+                },
+                colors: maiRandomColorArray(categories.length),
+                plotOptions: {
+                    bar: {
+                        distributed: true
                     }
                 }
             };
@@ -1302,9 +1345,9 @@ document.addEventListener('DOMContentLoaded', function() {
         var tableHtml = '<table class=\"local-mai-table\" id=\"local-mai-term-datatable\">';
         tableHtml += '<thead><tr>' +
             '<th>Curso</th>' +
-            '<th>Usuarios activos</th>' +
-            '<th>Usuarios inactivos</th>' +
-            '<th>Usuarios que nunca ingresaron</th>' +
+            '<th class=\"local-mai-th-active\">Usuarios activos</th>' +
+            '<th class=\"local-mai-th-inactive\">Usuarios inactivos</th>' +
+            '<th class=\"local-mai-th-never\">Usuarios que nunca ingresaron</th>' +
             '<th>Usuarios inscritos</th>' +
             '<th>Retención de usuarios activos (%)</th>' +
             '</tr></thead><tbody>';
@@ -1341,12 +1384,16 @@ document.addEventListener('DOMContentLoaded', function() {
             });
         }
 
-        // Gráfica barras por curso
+        // Gráfica barras por curso (con título Porcentaje de Retención)
         if (typeof ApexCharts !== 'undefined' && categories.length) {
             var options = {
                 chart: {
                     type: 'bar',
                     height: 260
+                },
+                title: {
+                    text: 'Porcentaje de Retención',
+                    align: 'center'
                 },
                 series: [{
                     name: 'Retención de usuarios activos (%)',
@@ -1359,6 +1406,12 @@ document.addEventListener('DOMContentLoaded', function() {
                     enabled: true,
                     formatter: function (val) {
                         return val + '%';
+                    }
+                },
+                colors: maiRandomColorArray(categories.length),
+                plotOptions: {
+                    bar: {
+                        distributed: true
                     }
                 }
             };
@@ -1432,7 +1485,7 @@ document.addEventListener('DOMContentLoaded', function() {
             groupSel.appendChild(optG);
 
             filtersData.groups.forEach(function(g) {
-            var o = document.createElement('option');
+                var o = document.createElement('option');
                 o.value = g.id;
                 o.textContent = g.name;
                 groupSel.appendChild(o);

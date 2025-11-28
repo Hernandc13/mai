@@ -4,6 +4,7 @@
 require(__DIR__ . '/../../../config.php');
 require_once(__DIR__ . '/lib.php');
 require_once($CFG->libdir . '/pdflib.php');
+require_once($CFG->libdir . '/excellib.class.php');
 
 require_login();
 
@@ -17,6 +18,17 @@ $categoryid = optional_param('categoryid', 0, PARAM_INT);
 $cohortid   = optional_param('cohortid', 0, PARAM_INT);
 $groupid    = optional_param('groupid', 0, PARAM_INT);
 $roleid     = optional_param('roleid', 0, PARAM_INT);
+
+// Segmento a exportar: all | activos | inactivos | nunca.
+// Soportamos tanto "segment" como "segmentfilter" por compatibilidad.
+$segment = optional_param('segment', '', PARAM_ALPHA);
+if ($segment === '') {
+    $segment = optional_param('segmentfilter', 'all', PARAM_ALPHA);
+}
+$allowedsegments = ['all', 'activos', 'inactivos', 'nunca'];
+if (!in_array($segment, $allowedsegments, true)) {
+    $segment = 'all';
+}
 
 $col_email      = optional_param('col_email', 1, PARAM_BOOL);
 $col_cohort     = optional_param('col_cohort', 1, PARAM_BOOL);
@@ -48,7 +60,12 @@ $activos         = $data['activos'];
 $inactivos       = $data['inactivos'];
 $nuncaingresaron = $data['nuncaingresaron'];
 
-// Fechas en formato 13/04/2005
+// Totales para el resumen.
+$totalactivos   = count($activos);
+$totalinactivos = count($inactivos);
+$totalnunca     = count($nuncaingresaron);
+$totaltodos     = $totalactivos + $totalinactivos + $totalnunca;
+
 $formatdate = function($timestamp) {
     if (empty($timestamp)) {
         return '-';
@@ -56,8 +73,15 @@ $formatdate = function($timestamp) {
     return userdate($timestamp, '%d/%m/%Y');
 };
 
-// ¿Hay inactivos? → sólo entonces mostramos columnas minutos/clics.
-$hasinactive = !empty($inactivos);
+$percent = function(int $n, int $base): int {
+    if ($base <= 0) {
+        return 0;
+    }
+    return (int)round(($n * 100) / $base);
+};
+
+// ¿Incluir columnas de minutos/clics?
+$hasinactive = !empty($inactivos) && ($segment === 'all' || $segment === 'inactivos');
 
 // =====================
 // Columnas (títulos COMPLETOS)
@@ -92,17 +116,17 @@ if ($hasinactive) {
 }
 
 // =====================
-// Filas
+// Filas (solo alumnos, sin duplicar resumen)
 // =====================
 $rows = [];
 
-$addrow = function(string $segment, stdClass $item) use (
+$addrow = function(string $segmentlabel, stdClass $item) use (
     &$rows,
     $col_email, $col_cohort, $col_group, $col_lastaccess, $col_enroltime,
     $formatdate, $hasinactive
 ) {
     $row = [
-        'segment'  => $segment,
+        'segment'  => $segmentlabel,
         'fullname' => $item->fullname ?? '',
     ];
 
@@ -133,39 +157,155 @@ $addrow = function(string $segment, stdClass $item) use (
     $rows[] = $row;
 };
 
-// Activos
-foreach ($activos as $a) {
-    $addrow('Activo', $a);
+// Activos (si el segmento lo incluye).
+if ($segment === 'all' || $segment === 'activos') {
+    foreach ($activos as $a) {
+        $addrow('Activo', $a);
+    }
 }
 
-// Inactivos
-foreach ($inactivos as $i) {
-    $addrow('Inactivo', $i);
+// Inactivos (si el segmento lo incluye).
+if ($segment === 'all' || $segment === 'inactivos') {
+    foreach ($inactivos as $i) {
+        $addrow('Inactivo', $i);
+    }
 }
 
-// Nunca ingresaron
-foreach ($nuncaingresaron as $n) {
-    $addrow('Nunca ingresó', $n);
+// Nunca ingresaron (si el segmento lo incluye).
+if ($segment === 'all' || $segment === 'nunca') {
+    foreach ($nuncaingresaron as $n) {
+        $addrow('Nunca ingresó', $n);
+    }
+}
+
+// =====================
+// Texto de resumen (reutilizado para PDF, Excel y CSV)
+// =====================
+$summarytitle = 'Resumen de participación por curso';
+
+$segmentlabels = [
+    'all'       => 'Todos los estudiantes',
+    'activos'   => 'Solo activos',
+    'inactivos' => 'Solo inactivos',
+    'nunca'     => 'Solo nunca ingresaron',
+];
+$segmentlabel = $segmentlabels[$segment] ?? 'Todos los estudiantes';
+
+$summarylines = [];
+$summarylines[] = 'Segmento exportado: ' . $segmentlabel;
+
+if ($segment === 'all') {
+    $summarylines[] = 'Total inscritos: ' . $totaltodos;
+    $summarylines[] = 'Activos: ' . $totalactivos . ' (' . $percent($totalactivos, $totaltodos) . '%)';
+    $summarylines[] = 'Inactivos: ' . $totalinactivos . ' (' . $percent($totalinactivos, $totaltodos) . '%)';
+    $summarylines[] = 'Nunca ingresaron: ' . $totalnunca . ' (' . $percent($totalnunca, $totaltodos) . '%)';
+} else if ($segment === 'activos') {
+    $summarylines[] = 'Total inscritos en el reporte: ' . $totalactivos;
+    if ($totaltodos > 0) {
+        $summarylines[] = 'Participación sobre el curso: ' .
+            $percent($totalactivos, $totaltodos) . '% de los inscritos';
+    }
+} else if ($segment === 'inactivos') {
+    $summarylines[] = 'Total inscritos en el reporte: ' . $totalinactivos;
+    if ($totaltodos > 0) {
+        $summarylines[] = 'Proporción de inactivos en el curso: ' .
+            $percent($totalinactivos, $totaltodos) . '% de los inscritos';
+    }
+} else if ($segment === 'nunca') {
+    $summarylines[] = 'Total inscritos en el reporte: ' . $totalnunca;
+    if ($totaltodos > 0) {
+        $summarylines[] = 'Nunca ingresaron (sobre el curso): ' .
+            $percent($totalnunca, $totaltodos) . '% de los inscritos';
+    }
 }
 
 $filenamebase = 'mai_participacion_' . preg_replace('/[^a-zA-Z0-9_-]/', '_', $course->shortname);
 $today        = userdate(time(), '%Y%m%d');
 
 // =====================
-// XLSX
+// XLSX (resumen arriba, tabla abajo)
 // =====================
 if ($format === 'xlsx') {
     $filename = $filenamebase . '_' . $today;
-    \core\dataformat::download_data($filename, 'excel', $columns, $rows);
+
+    $workbook  = new MoodleExcelWorkbook($filename);
+    $workbook->send($filename . '.xlsx');
+    $worksheet = $workbook->add_worksheet('Participación');
+
+    $row = 0;
+
+    // Resumen (columna B)
+    $worksheet->write_string($row++, 1, $summarytitle);
+    foreach ($summarylines as $line) {
+        $worksheet->write_string($row++, 1, $line);
+    }
+
+    // Línea en blanco
+    $row++;
+
+    // Encabezados de la tabla
+    $colkeys = array_keys($columns);
+    $col     = 0;
+    foreach ($colkeys as $key) {
+        $worksheet->write_string($row, $col++, $columns[$key]);
+    }
+    $row++;
+
+    // Filas de datos
+    foreach ($rows as $r) {
+        $col = 0;
+        foreach ($colkeys as $key) {
+            $value = isset($r[$key]) ? (string)$r[$key] : '';
+            $worksheet->write_string($row, $col++, $value);
+        }
+        $row++;
+    }
+
+    $workbook->close();
     die;
 }
 
 // =====================
-// CSV
+// CSV (resumen arriba, tabla abajo)
 // =====================
 if ($format === 'csv') {
-    $filename = $filenamebase . '_' . $today;
-    \core\dataformat::download_data($filename, 'csv', $columns, $rows);
+    $filename = $filenamebase . '_' . $today . '.csv';
+
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+
+    $output = fopen('php://output', 'w');
+
+    // BOM UTF-8 para que Excel no rompa acentos
+    fprintf($output, chr(0xEF) . chr(0xBB) . chr(0xBF));
+
+    // Resumen
+    fputcsv($output, ['', $summarytitle]);
+    foreach ($summarylines as $line) {
+        fputcsv($output, ['', $line]);
+    }
+
+    // Línea en blanco
+    fputcsv($output, []);
+
+    // Encabezados de la tabla
+    $colkeys = array_keys($columns);
+    $header  = [];
+    foreach ($colkeys as $key) {
+        $header[] = $columns[$key];
+    }
+    fputcsv($output, $header);
+
+    // Filas de datos
+    foreach ($rows as $r) {
+        $line = [];
+        foreach ($colkeys as $key) {
+            $line[] = isset($r[$key]) ? $r[$key] : '';
+        }
+        fputcsv($output, $line);
+    }
+
+    fclose($output);
     die;
 }
 
@@ -228,6 +368,22 @@ if ($format === 'pdf') {
 
     $pdf->Ln(6);
 
+    // =====================
+    // Resumen de participación por curso
+    // =====================
+    $pdf->SetFont('helvetica', 'B', 11);
+    $pdf->Cell(0, 7, $summarytitle, 0, 1, 'L');
+
+    $pdf->SetFont('helvetica', '', 10);
+    foreach ($summarylines as $line) {
+        $pdf->Cell(0, 6, $line, 0, 1, 'L');
+    }
+
+    $pdf->Ln(4);
+
+    // =====================
+    // Tabla de detalle
+    // =====================
     $colkeys = array_keys($columns);
 
     // Pesos por columna

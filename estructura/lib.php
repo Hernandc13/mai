@@ -8,7 +8,7 @@ defined('MOODLE_INTERNAL') || die();
  *
  * @param int $programid  Categoría padre (programa académico).
  * @param int $termid     Subcategoría (cuatrimestre).
- * @param int $teacherid  Usuario docente (editingteacher, filtro para cuatrimestre).
+ * @param int $teacherid  Usuario docente (editar / no editar, filtro para cuatrimestre).
  * @param int $groupid    Grupo de Moodle (filtro por grupo dentro del cuatrimestre).
  * @return array          Datos agregados para usar en AJAX/export.
  */
@@ -104,7 +104,7 @@ function local_mai_estructura_get_stats(int $programid = 0, int $termid = 0, int
     $programStats = [];
 
     foreach ($courseStats as $cs) {
-        $catid = $cs['category'];
+        $catid        = $cs['category'];
         $topprogramid = $get_top_program($catid);
         if (!$topprogramid || !isset($programcats[$topprogramid])) {
             continue;
@@ -138,14 +138,24 @@ function local_mai_estructura_get_stats(int $programid = 0, int $termid = 0, int
         }
     }
 
-    // Docentes tipo editingteacher del cuatrimestre.
+    // Docentes del cuatrimestre (editingteacher Y teacher).
     $teachers = [];
-    $editingrole = $DB->get_record('role', ['shortname' => 'editingteacher'], 'id', IGNORE_MISSING);
-    $editingroleid = $editingrole->id ?? 0;
 
-    if ($termid && $editingroleid && !empty($termcourseids)) {
+    $editingrole    = $DB->get_record('role', ['shortname' => 'editingteacher'], 'id', IGNORE_MISSING);
+    $noneditingrole = $DB->get_record('role', ['shortname' => 'teacher'], 'id', IGNORE_MISSING);
+
+    $teacherroleids = [];
+    if (!empty($editingrole) && !empty($editingrole->id)) {
+        $teacherroleids[] = (int)$editingrole->id;
+    }
+    if (!empty($noneditingrole) && !empty($noneditingrole->id)) {
+        $teacherroleids[] = (int)$noneditingrole->id;
+    }
+
+    if ($termid && !empty($termcourseids) && !empty($teacherroleids)) {
         list($sqlin, $params) = $DB->get_in_or_equal($termcourseids, SQL_PARAMS_NAMED);
-        $params['roleid']    = $editingroleid;
+        list($sqlroles, $roleparams) = $DB->get_in_or_equal($teacherroleids, SQL_PARAMS_NAMED, 'roleid');
+        $params = array_merge($params, $roleparams);
         $params['ctxcourse'] = CONTEXT_COURSE;
 
         $teachers = $DB->get_records_sql("
@@ -156,7 +166,7 @@ function local_mai_estructura_get_stats(int $programid = 0, int $termid = 0, int
               FROM {user} u
               JOIN {role_assignments} ra ON ra.userid = u.id
               JOIN {context} ctx ON ctx.id = ra.contextid
-             WHERE ra.roleid = :roleid
+             WHERE ra.roleid $sqlroles
                AND ctx.contextlevel = :ctxcourse
                AND ctx.instanceid $sqlin
              ORDER BY u.lastname, u.firstname
@@ -165,17 +175,18 @@ function local_mai_estructura_get_stats(int $programid = 0, int $termid = 0, int
 
     // Restringimos cursos de cuatrimestre por docente si aplica.
     $scopeTermCourseIds = $termcourseids;
-    if ($termid && $teacherid && $editingroleid && !empty($termcourseids)) {
+    if ($termid && $teacherid && !empty($termcourseids) && !empty($teacherroleids)) {
         list($sqlin, $params) = $DB->get_in_or_equal($termcourseids, SQL_PARAMS_NAMED);
-        $params['roleid']     = $editingroleid;
-        $params['teacherid']  = $teacherid;
-        $params['ctxcourse']  = CONTEXT_COURSE;
+        list($sqlroles, $roleparams) = $DB->get_in_or_equal($teacherroleids, SQL_PARAMS_NAMED, 'roleid');
+        $params = array_merge($params, $roleparams);
+        $params['teacherid'] = $teacherid;
+        $params['ctxcourse'] = CONTEXT_COURSE;
 
         $teachercourses = $DB->get_fieldset_sql("
             SELECT DISTINCT ctx.instanceid AS courseid
               FROM {role_assignments} ra
               JOIN {context} ctx ON ctx.id = ra.contextid
-             WHERE ra.roleid = :roleid
+             WHERE ra.roleid $sqlroles
                AND ra.userid = :teacherid
                AND ctx.contextlevel = :ctxcourse
                AND ctx.instanceid $sqlin

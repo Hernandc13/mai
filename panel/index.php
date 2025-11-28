@@ -15,7 +15,7 @@ global $DB;
 $systemcontext = context_system::instance();
 require_capability('local/mai:viewreport', $systemcontext);
 
-$pagetitle = 'Panel de control';
+$pagetitle = ' Reporte en gráficos';
 
 $PAGE->set_url(new moodle_url('/local/mai/panel/index.php'));
 $PAGE->set_context($systemcontext);
@@ -24,6 +24,7 @@ $PAGE->set_title($pagetitle);
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading($pagetitle);
+
 // Botón para volver al dashboard principal de MAI.
 $backurl = new moodle_url('/local/mai/index.php');
 
@@ -418,7 +419,7 @@ $css = "
     /* Botón regresar al dashboard MAI */
 .local-mai-panel-back {
     display: flex;
-    justify-content: flex-start; /* cambia a flex-end si lo quieres a la derecha */
+    justify-content: flex-start;
     margin-bottom: 6px;
 }
 
@@ -696,6 +697,19 @@ document.addEventListener('DOMContentLoaded', function() {
     var barProgressChart= null;
     var barTermsChart   = null;
 
+    // Colores corporativos para barras (aleatorio entre maroon y naranja)
+    var maiBaseColors = ['#8C253E', '#FF7000'];
+    function maiRandomColor() {
+        return maiBaseColors[Math.floor(Math.random() * maiBaseColors.length)];
+    }
+    function maiRandomColorArray(len) {
+        var out = [];
+        for (var i = 0; i < len; i++) {
+            out.push(maiRandomColor());
+        }
+        return out;
+    }
+
     function getFilters() {
         return {
             programid: programSel ? programSel.value : '0',
@@ -732,7 +746,8 @@ document.addEventListener('DOMContentLoaded', function() {
             },
             labels: ['Activos', 'Inactivos', 'Nunca ingresó'],
             series: [global.active, global.inactive, global.never],
-            colors: ['#16a34a', '#f97316', '#94a3b8'],
+            // Verde (activos), amarillo (inactivos), rojo (nunca ingresó)
+            colors: ['#16a34a', '#facc15', '#dc2626'],
             dataLabels: {
                 enabled: true,
                 formatter: function (val, opts) {
@@ -805,11 +820,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 type: 'bar',
                 height: 260
             },
+            title: {
+                text: 'Porcentaje de retención por programa académico',
+                align: 'center'
+            },
             series: [{
                 name: 'Retención de usuarios activos (%)',
                 data: dataRetention
             }],
-            colors: ['#8C253E'],
+            colors: maiRandomColorArray(categories.length),
             xaxis: {
                 categories: categories,
                 labels: {
@@ -829,11 +848,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 enabled: true,
                 formatter: function(val) {
                     return val + '%';
+                },
+                style: {
+                    colors: ['#ffffffff'],
+                    fontWeight: 600
                 }
             },
             tooltip: {
                 y: {
                     formatter: function(val) { return val + '%'; }
+                }
+            },
+            plotOptions: {
+                bar: {
+                    distributed: true
                 }
             }
         };
@@ -848,7 +876,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // --------- Render barra de promedio de actividades completadas ---------
-    // Espera que cada objeto de programstats tenga ps.avgcompletion (0–100).
     function renderBarProgress(programstats, global) {
         barProgressEl.innerHTML = '';
         barProgressStats.innerHTML = '';
@@ -877,11 +904,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 type: 'bar',
                 height: 260
             },
+            title: {
+                text: 'Promedio de actividades completadas por programa',
+                align: 'center'
+            },
             series: [{
                 name: 'Promedio de actividades completadas (%)',
                 data: dataProgress
             }],
-            colors: ['#0ea5e9'],
+            colors: maiRandomColorArray(categories.length),
             xaxis: {
                 categories: categories,
                 labels: {
@@ -901,11 +932,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 enabled: true,
                 formatter: function(val) {
                     return val + '%';
+                },
+                style: {
+                    colors: ['#ffffffff'],
+                    fontWeight: 600
                 }
             },
             tooltip: {
                 y: {
                     formatter: function(val) { return val + '%'; }
+                }
+            },
+            plotOptions: {
+                bar: {
+                    distributed: true
                 }
             }
         };
@@ -959,11 +999,15 @@ document.addEventListener('DOMContentLoaded', function() {
                 type: 'bar',
                 height: 260
             },
+            title: {
+                text: 'Porcentaje de retención por cuatrimestre',
+                align: 'center'
+            },
             series: [{
                 name: 'Retención por cuatrimestre (%)',
                 data: dataRetention
             }],
-            colors: ['#FF7000'],
+            colors: maiRandomColorArray(categories.length),
             xaxis: {
                 categories: categories,
                 labels: {
@@ -983,11 +1027,20 @@ document.addEventListener('DOMContentLoaded', function() {
                 enabled: true,
                 formatter: function(val) {
                     return val + '%';
+                },
+                style: {
+                    colors: ['#ffffffff'],
+                    fontWeight: 600
                 }
             },
             tooltip: {
                 y: {
                     formatter: function(val) { return val + '%'; }
+                }
+            },
+            plotOptions: {
+                bar: {
+                    distributed: true
                 }
             }
         };

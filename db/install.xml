@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<XMLDB PATH="local/mai/db" VERSION="2025112800" COMMENT="MAI - Monitoreo Académico Integral"
+       xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xsi:noNamespaceSchemaLocation="../../../lib/xmldb/xmldb.xsd">
+
+  <TABLES>
+
+    <TABLE NAME="local_mai_notif_rules" COMMENT="Reglas de notificaciones MAI por programa y cuatrimestre.">
+      <FIELDS>
+        <!-- PK -->
+        <FIELD NAME="id" TYPE="int" LENGTH="10" NOTNULL="true" SEQUENCE="true" COMMENT="ID de la regla"/>
+
+        <!-- Identificación y estado -->
+        <FIELD NAME="name" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT="" COMMENT="Nombre descriptivo de la regla"/>
+        <FIELD NAME="enabled" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="1" COMMENT="0=desactivada, 1=activa"/>
+
+        <!-- Ámbito (programa/cuatrimestre) -->
+        <FIELD NAME="programid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" COMMENT="ID de categoría padre (programa). 0=todos"/>
+        <FIELD NAME="termid" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" COMMENT="ID de subcategoría (cuatrimestre). 0=todos"/>
+
+        <!-- Cursos de la regla (opcional, CSV) -->
+        <FIELD NAME="monitored_courses" TYPE="text" LENGTH="big" NOTNULL="false" COMMENT="Lista de IDs de curso separados por coma"/>
+
+        <!-- Config de reportes automáticos -->
+        <FIELD NAME="reportenabled" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="1" COMMENT="0=sin reportes, 1=envío de reportes activo para esta regla"/>
+        <FIELD NAME="report_frequency" TYPE="char" LENGTH="20" NOTNULL="true" DEFAULT="weekly" COMMENT="daily, weekly, monthly"/>
+        <FIELD NAME="report_format" TYPE="char" LENGTH="10" NOTNULL="true" DEFAULT="pdf" COMMENT="Formato de adjunto: pdf/xlsx"/>
+        <FIELD NAME="report_recipients" TYPE="text" LENGTH="small" NOTNULL="false" COMMENT="Correos de destinatarios de reportes (separados por coma)"/>
+        <FIELD NAME="report_template" TYPE="text" LENGTH="medium" NOTNULL="false" COMMENT="Plantilla HTML de correo al coordinador para esta regla"/>
+        <FIELD NAME="last_report_sent" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" COMMENT="Timestamp del último reporte enviado para esta regla"/>
+
+        <!-- Config de alertas -->
+        <FIELD NAME="alertsenabled" TYPE="int" LENGTH="2" NOTNULL="true" DEFAULT="1" COMMENT="0=sin alertas, 1=alertas activas para esta regla"/>
+        <FIELD NAME="alert_days_inactive" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="7" COMMENT="Días sin ingresar para disparar alerta de estudiante"/>
+        <FIELD NAME="alert_group_inactivity" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="50" COMMENT="% mínimo de inactividad para alerta de grupo"/>
+        <FIELD NAME="alert_recipients" TYPE="text" LENGTH="small" NOTNULL="false" COMMENT="Correos que reciben resumen de inactividad por grupos"/>
+        <FIELD NAME="alert_student_message" TYPE="text" LENGTH="medium" NOTNULL="false" COMMENT="Mensaje al estudiante para esta regla"/>
+        <FIELD NAME="alert_coord_message" TYPE="text" LENGTH="medium" NOTNULL="false" COMMENT="Mensaje al coordinador/tutor para esta regla"/>
+        <FIELD NAME="alert_channels" TYPE="char" LENGTH="255" NOTNULL="true" DEFAULT="internal" COMMENT="Canales: email,internal"/>
+
+        <FIELD NAME="last_alerts_checked" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" COMMENT="Timestamp última revisión de alertas de esta regla"/>
+
+        <!-- Timestamps -->
+        <FIELD NAME="timecreated" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" COMMENT="Fecha de creación de la regla"/>
+        <FIELD NAME="timemodified" TYPE="int" LENGTH="10" NOTNULL="true" DEFAULT="0" COMMENT="Fecha de última modificación de la regla"/>
+      </FIELDS>
+
+      <KEYS>
+        <KEY NAME="primary" TYPE="primary" FIELDS="id"/>
+      </KEYS>
+
+      <INDEXES>
+        <INDEX NAME="programid_idx" UNIQUE="false" FIELDS="programid"/>
+        <INDEX NAME="termid_idx" UNIQUE="false" FIELDS="termid"/>
+        <INDEX NAME="enabled_idx" UNIQUE="false" FIELDS="enabled"/>
+      </INDEXES>
+    </TABLE>
+
+  </TABLES>
+</XMLDB>

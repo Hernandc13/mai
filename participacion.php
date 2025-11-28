@@ -41,6 +41,7 @@ $PAGE->requires->jquery();
 
 echo $OUTPUT->header();
 echo $OUTPUT->heading($pagetitle);
+
 // Botón para volver al dashboard principal de MAI.
 $backurl = new moodle_url('/local/mai/index.php');
 
@@ -276,14 +277,14 @@ $css = "
     padding: 12px 18px 16px;
 }
 
-/* FILA KPIs (4 columnas) */
+/* FILA KPIs (vertical) */
 .local-mai-card-kpis .local-mai-card-body {
     padding-top: 10px;
 }
 .local-mai-kpi-row {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
 .local-mai-kpi-card {
     border-radius: 14px;
@@ -329,7 +330,7 @@ $css = "
 .local-mai-kpi-card--inactivos .local-mai-kpi-value { color: #f59e0b; }
 .local-mai-kpi-card--nunca .local-mai-kpi-value { color: #dc2626; }
 
-/* FILA PRINCIPAL: FILTROS (IZQ) + DETALLE (DER) */
+/* FILA PRINCIPAL: FILTROS (ARRIBA) + KPIs/DETALLE */
 .local-mai-main-row {
     display: flex;
     gap: 18px;
@@ -342,21 +343,21 @@ $css = "
     flex: 2 1 0;
 }
 
-/* FILTROS (card izquierda) */
+/* FILTROS (card superior) */
 .local-mai-filters-body {
     margin-top: 4px;
 }
 #local-mai-filters-form {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-start;
-    gap: 10px 0;
+    align-items: flex-end;
+    gap: 10px 12px;
 }
 .local-mai-filters .form-group {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
+    width: calc(33.333% - 8px); /* 3 columnas */
+}
+.local-mai-filters .form-group-submit {
+    width: calc(33.333% - 8px);
 }
 .local-mai-filters label {
     font-size: 0.78rem;
@@ -383,6 +384,14 @@ $css = "
     background-color: #ffffff;
     box-shadow: 0 0 0 1px rgba(255, 112, 0, 0.25);
     transform: translateY(-1px);
+}
+
+/* En pantallas chicas filtros verticales */
+@media (max-width: 900px) {
+    .local-mai-filters .form-group,
+    .local-mai-filters .form-group-submit {
+        width: 100%;
+    }
 }
 
 /* BOTÓN APLICAR FILTROS */
@@ -524,6 +533,21 @@ $css = "
     gap: 6px;
     font-size: 0.8rem;
 }
+
+/* Segmento a exportar */
+.local-mai-export-segment {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+.local-mai-export-segment-options {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
 .local-mai-chip {
     display: inline-flex;
     align-items: center;
@@ -664,22 +688,19 @@ $css = "
     to { transform: rotate(360deg); }
 }
 
-/* RESPONSIVE */
+/* RESPONSIVE extra */
 @media (max-width: 900px) {
-    .local-mai-kpi-row {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
     .local-mai-main-row {
         flex-direction: column;
     }
 }
-    /* Botón regresar al dashboard MAI */
+
+/* Botón regresar al dashboard MAI */
 .local-mai-panel-back {
     display: flex;
-    justify-content: flex-start; /* cambia a flex-end si lo quieres a la derecha */
+    justify-content: flex-start;
     margin-bottom: 6px;
 }
-
 .local-mai-btn-back {
     display: inline-flex;
     align-items: center;
@@ -695,7 +716,6 @@ $css = "
     cursor: pointer;
     transition: border-color .15s ease, box-shadow .15s ease, transform .1s ease, color .15s ease;
 }
-
 .local-mai-btn-back:hover,
 .local-mai-btn-back:focus {
     border-color: rgba(140,37,62,0.35);
@@ -703,7 +723,6 @@ $css = "
     box-shadow: 0 8px 18px rgba(15,23,42,0.10);
     transform: translateY(-1px);
 }
-
 .local-mai-btn-back-icon {
     font-size: 0.85rem;
 }
@@ -721,11 +740,104 @@ echo html_writer::start_div('local-mai-participation-wrapper');
 // ALERTA / loader inicial
 echo html_writer::tag(
     'div',
-    'Selecciona un curso y haz clic en "Aplicar filtros" para ver la participación.',
+    'Selecciona un curso y haz clic en "APLICAR FILTROS" para ver la participación.',
     ['id' => 'local-mai-participation-loading', 'class' => 'alert alert-info']
 );
 
-// ---- CARD KPIs ----
+// ---- CARD FILTROS (ARRIBA, ANCHO COMPLETO) ----
+echo html_writer::start_div('local-mai-card local-mai-filters');
+
+// header filtros
+echo html_writer::start_div('local-mai-card-header local-mai-card-header--filters');
+echo html_writer::start_div('local-mai-card-header-main');
+echo html_writer::tag('span', '<i class="fa-solid fa-filter"></i>', [
+    'class' => 'local-mai-card-header-icon'
+]);
+echo html_writer::start_div('local-mai-card-header-text');
+echo html_writer::tag('h3', 'Filtros de búsqueda', ['class' => 'local-mai-card-title']);
+echo html_writer::tag('p', 'Refina el análisis por categoría, curso, cohorte, grupo y rol.', ['class' => 'local-mai-card-subtitle']);
+echo html_writer::end_div(); // header-text
+echo html_writer::end_div(); // header-main
+echo html_writer::end_div(); // card-header
+
+echo html_writer::start_div('local-mai-card-body');
+echo html_writer::tag('p',
+    'Selecciona la combinación de filtros para analizar la participación.',
+    ['class' => 'local-mai-export-help']
+);
+
+echo html_writer::start_div('local-mai-filters-body');
+
+echo html_writer::start_tag('form', [
+    'method' => 'get',
+    'class'  => 'form-inline flex-wrap',
+    'id'     => 'local-mai-filters-form'
+]);
+
+// Categoría.
+echo html_writer::start_div('form-group');
+echo html_writer::label('Categoría', 'id_categoryid');
+echo html_writer::select($categoriesmenu, 'categoryid', $categoryid, null, [
+    'id'    => 'id_categoryid',
+    'class' => 'custom-select'
+]);
+echo html_writer::end_div();
+
+// Curso.
+echo html_writer::start_div('form-group');
+echo html_writer::label('Curso', 'id_courseid');
+echo html_writer::select($coursesmenu, 'courseid', $courseid, null, [
+    'id'    => 'id_courseid',
+    'class' => 'custom-select'
+]);
+echo html_writer::end_div();
+
+// Cohorte.
+echo html_writer::start_div('form-group');
+echo html_writer::label('Cohorte', 'id_cohortid');
+echo html_writer::select($cohortsmenu, 'cohortid', $cohortid, null, [
+    'id'    => 'id_cohortid',
+    'class' => 'custom-select'
+]);
+echo html_writer::end_div();
+
+// Grupo.
+echo html_writer::start_div('form-group');
+echo html_writer::label('Grupo', 'id_groupid');
+echo html_writer::select($groupsmenu, 'groupid', $groupid, null, [
+    'id'    => 'id_groupid',
+    'class' => 'custom-select'
+]);
+echo html_writer::end_div();
+
+// Rol.
+echo html_writer::start_div('form-group');
+echo html_writer::label('Rol', 'id_roleid');
+echo html_writer::select($rolesmenu, 'roleid', $roleid, null, [
+    'id'    => 'id_roleid',
+    'class' => 'custom-select'
+]);
+echo html_writer::end_div();
+
+// Botón aplicar.
+echo html_writer::start_div('form-group form-group-submit');
+echo html_writer::empty_tag('input', [
+    'type'  => 'submit',
+    'value' => 'Aplicar filtros',
+    'class' => 'local-mai-btn-primary'
+]);
+echo html_writer::end_div();
+
+echo html_writer::end_tag('form');
+echo html_writer::end_div(); // filters-body
+echo html_writer::end_div(); // card-body
+echo html_writer::end_div(); // card filtros
+
+// ---- FILA PRINCIPAL: KPIs IZQ, detalle DER ----
+echo html_writer::start_div('local-mai-main-row');
+
+// Columna izquierda: RESUMEN DE PARTICIPACIÓN (KPIs)
+echo html_writer::start_div('local-mai-main-left');
 echo html_writer::start_div('local-mai-card local-mai-card-kpis');
 
 // header con icono y subtítulo
@@ -735,7 +847,7 @@ echo html_writer::tag('span', '<i class="fa-solid fa-chart-pie"></i>', [
     'class' => 'local-mai-card-header-icon'
 ]);
 echo html_writer::start_div('local-mai-card-header-text');
-echo html_writer::tag('h3', 'Resumen de participación', ['class' => 'local-mai-card-title']);
+echo html_writer::tag('h3', 'Resumen de participación por curso', ['class' => 'local-mai-card-title']);
 echo html_writer::tag('p', 'Indicadores globales del curso seleccionado.', ['class' => 'local-mai-card-subtitle']);
 echo html_writer::end_div(); // header-text
 echo html_writer::end_div(); // header-main
@@ -824,99 +936,6 @@ echo html_writer::end_div();
 echo html_writer::end_div(); // kpi-row
 echo html_writer::end_div(); // card-body
 echo html_writer::end_div(); // card-kpis
-
-// ---- FILA PRINCIPAL: filtros IZQ, detalle DER ----
-echo html_writer::start_div('local-mai-main-row');
-
-// Columna izquierda: Filtros
-echo html_writer::start_div('local-mai-main-left');
-echo html_writer::start_div('local-mai-card local-mai-filters');
-
-// header filtros
-echo html_writer::start_div('local-mai-card-header local-mai-card-header--filters');
-echo html_writer::start_div('local-mai-card-header-main');
-echo html_writer::tag('span', '<i class="fa-solid fa-filter"></i>', [
-    'class' => 'local-mai-card-header-icon'
-]);
-echo html_writer::start_div('local-mai-card-header-text');
-echo html_writer::tag('h3', 'Filtros de búsqueda', ['class' => 'local-mai-card-title']);
-echo html_writer::tag('p', 'Refina el análisis por categoría, curso, cohorte, grupo y rol.', ['class' => 'local-mai-card-subtitle']);
-echo html_writer::end_div(); // header-text
-echo html_writer::end_div(); // header-main
-echo html_writer::end_div(); // card-header
-
-echo html_writer::start_div('local-mai-card-body');
-echo html_writer::tag('p',
-    'Selecciona la combinación de filtros para analizar la participación.',
-    ['class' => 'local-mai-export-help']
-);
-
-echo html_writer::start_div('local-mai-filters-body');
-
-echo html_writer::start_tag('form', [
-    'method' => 'get',
-    'class'  => 'form-inline flex-wrap',
-    'id'     => 'local-mai-filters-form'
-]);
-
-// Categoría.
-echo html_writer::start_div('form-group');
-echo html_writer::label('Categoría', 'id_categoryid');
-echo html_writer::select($categoriesmenu, 'categoryid', $categoryid, null, [
-    'id'    => 'id_categoryid',
-    'class' => 'custom-select'
-]);
-echo html_writer::end_div();
-
-// Curso.
-echo html_writer::start_div('form-group');
-echo html_writer::label('Curso', 'id_courseid');
-echo html_writer::select($coursesmenu, 'courseid', $courseid, null, [
-    'id'    => 'id_courseid',
-    'class' => 'custom-select'
-]);
-echo html_writer::end_div();
-
-// Cohorte.
-echo html_writer::start_div('form-group');
-echo html_writer::label('Cohorte', 'id_cohortid');
-echo html_writer::select($cohortsmenu, 'cohortid', $cohortid, null, [
-    'id'    => 'id_cohortid',
-    'class' => 'custom-select'
-]);
-echo html_writer::end_div();
-
-// Grupo.
-echo html_writer::start_div('form-group');
-echo html_writer::label('Grupo', 'id_groupid');
-echo html_writer::select($groupsmenu, 'groupid', $groupid, null, [
-    'id'    => 'id_groupid',
-    'class' => 'custom-select'
-]);
-echo html_writer::end_div();
-
-// Rol.
-echo html_writer::start_div('form-group');
-echo html_writer::label('Rol', 'id_roleid');
-echo html_writer::select($rolesmenu, 'roleid', $roleid, null, [
-    'id'    => 'id_roleid',
-    'class' => 'custom-select'
-]);
-echo html_writer::end_div();
-
-// Botón aplicar.
-echo html_writer::start_div('form-group');
-echo html_writer::empty_tag('input', [
-    'type'  => 'submit',
-    'value' => 'Aplicar filtros',
-    'class' => 'local-mai-btn-primary'
-]);
-echo html_writer::end_div();
-
-echo html_writer::end_tag('form');
-echo html_writer::end_div(); // filters-body
-echo html_writer::end_div(); // card-body
-echo html_writer::end_div(); // card filtros
 echo html_writer::end_div(); // main-left
 
 // Columna derecha: Detalle + Configuración de exportación
@@ -957,7 +976,7 @@ echo '
 echo html_writer::end_div(); // card-body detalle
 echo html_writer::end_div(); // card detalle
 
-// Nueva card Configuración de exportación (debajo)
+// Card Configuración de exportación (debajo)
 echo html_writer::start_div('local-mai-card local-mai-export-card', [
     'id'    => 'local-mai-export-card',
     'style' => 'display:none;'
@@ -970,19 +989,62 @@ echo html_writer::tag('span', '<i class="fa-solid fa-file-export"></i>', [
 ]);
 echo html_writer::start_div('local-mai-card-header-text');
 echo html_writer::tag('h3', 'Configuración de exportación', ['class' => 'local-mai-card-title']);
-echo html_writer::tag('p', 'Personaliza columnas y formato antes de descargar los resultados.', ['class' => 'local-mai-card-subtitle']);
+echo html_writer::tag('p', 'Elige qué segmento exportar y qué columnas incluir en Excel, PDF o CSV.', ['class' => 'local-mai-card-subtitle']);
 echo html_writer::end_div(); // header-text
 echo html_writer::end_div(); // header-main
 echo html_writer::end_div(); // card-header
 
 echo html_writer::start_div('local-mai-card-body');
-echo html_writer::tag(
-    'p',
-    'Activa o desactiva las columnas que se incluirán en los archivos Excel, PDF o CSV.',
-    ['class' => 'local-mai-export-help']
-);
-
 echo html_writer::start_div('local-mai-export-row');
+
+/* ==== Segmento a exportar ==== */
+echo html_writer::start_div('local-mai-export-segment');
+echo html_writer::tag('span', 'Segmento a exportar:', ['class' => 'local-mai-export-label']);
+echo html_writer::start_div('local-mai-export-segment-options');
+
+echo html_writer::start_tag('label', ['class' => 'local-mai-chip']);
+echo html_writer::empty_tag('input', [
+    'type'    => 'radio',
+    'name'    => 'export_segment',
+    'id'      => 'segment_all',
+    'value'   => 'all',
+    'checked' => 'checked'
+]);
+echo html_writer::tag('span', 'Todos', ['class' => 'local-mai-chip-text']);
+echo html_writer::end_tag('label');
+
+echo html_writer::start_tag('label', ['class' => 'local-mai-chip']);
+echo html_writer::empty_tag('input', [
+    'type'  => 'radio',
+    'name'  => 'export_segment',
+    'id'    => 'segment_activos',
+    'value' => 'activos'
+]);
+echo html_writer::tag('span', 'Solo activos', ['class' => 'local-mai-chip-text']);
+echo html_writer::end_tag('label');
+
+echo html_writer::start_tag('label', ['class' => 'local-mai-chip']);
+echo html_writer::empty_tag('input', [
+    'type'  => 'radio',
+    'name'  => 'export_segment',
+    'id'    => 'segment_inactivos',
+    'value' => 'inactivos'
+]);
+echo html_writer::tag('span', 'Solo inactivos', ['class' => 'local-mai-chip-text']);
+echo html_writer::end_tag('label');
+
+echo html_writer::start_tag('label', ['class' => 'local-mai-chip']);
+echo html_writer::empty_tag('input', [
+    'type'  => 'radio',
+    'name'  => 'export_segment',
+    'id'    => 'segment_nunca',
+    'value' => 'nunca'
+]);
+echo html_writer::tag('span', 'Solo nunca ingresaron', ['class' => 'local-mai-chip-text']);
+echo html_writer::end_tag('label');
+
+echo html_writer::end_div(); // segment-options
+echo html_writer::end_div(); // export-segment
 
 // Columnas export.
 echo html_writer::start_div('local-mai-export-columns');
@@ -1362,6 +1424,17 @@ document.addEventListener('DOMContentLoaded', function() {
         };
     }
 
+    function getExportSegment() {
+        var radios = document.querySelectorAll('input[name=\"export_segment\"]');
+        var selected = 'all';
+        radios.forEach(function(r) {
+            if (r.checked) {
+                selected = r.value;
+            }
+        });
+        return selected;
+    }
+
     function buildExportUrl(format) {
         var filters = getFilters();
 
@@ -1370,7 +1443,8 @@ document.addEventListener('DOMContentLoaded', function() {
             return null;
         }
 
-        var cols = getExportColumns();
+        var cols    = getExportColumns();
+        var segment = getExportSegment();
 
         var params = new URLSearchParams();
         params.append('format',     format);
@@ -1379,6 +1453,7 @@ document.addEventListener('DOMContentLoaded', function() {
         params.append('cohortid',   filters.cohortid || 0);
         params.append('groupid',    filters.groupid || 0);
         params.append('roleid',     filters.roleid || 0);
+        params.append('segment',    segment);
         params.append('sesskey',    sesskey);
 
         Object.keys(cols).forEach(function(key) {

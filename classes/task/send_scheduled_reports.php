@@ -1,7 +1,8 @@
 <?php
 // local/mai/classes/task/send_scheduled_reports.php
 //
-// Tarea programada para envío automatizado de reportes MAI.
+// Tarea programada para envío automatizado de reportes MAI por regla
+// (programa + cuatrimestre + cursos).
 //
 
 namespace local_mai\task;
@@ -10,7 +11,6 @@ defined('MOODLE_INTERNAL') || die();
 
 global $CFG;
 
-require_once($CFG->dirroot . '/local/mai/notificaciones/lib.php');
 require_once($CFG->libdir . '/pdflib.php');
 require_once($CFG->libdir . '/excellib.class.php');
 require_once($CFG->libdir . '/enrollib.php');
@@ -33,180 +33,219 @@ class send_scheduled_reports extends scheduled_task {
 
         mtrace('[local_mai] Ejecutando tarea: send_scheduled_reports');
 
-        $settings = \local_mai_notificaciones_get_settings();
+        // Reglas activas (enabled=1).
+        $rules = $DB->get_records('local_mai_notif_rules', ['enabled' => 1], 'id ASC');
 
-        if (!\local_mai_notificaciones_should_send_report($settings)) {
-            mtrace('[local_mai] No corresponde enviar reporte en este momento.');
+        if (empty($rules)) {
+            mtrace('[local_mai] No hay reglas de programación activas.');
             return;
         }
 
-        if (empty($settings->report_recipients)) {
-            mtrace('[local_mai] No hay destinatarios configurados para los reportes.');
-            \local_mai_notificaciones_mark_report_sent();
-            return;
-        }
+        $now = time();
 
-        $recipients = preg_split('/[,;]+/', $settings->report_recipients, -1, PREG_SPLIT_NO_EMPTY);
-        $recipients = array_map('trim', $recipients);
-        if (empty($recipients)) {
-            mtrace('[local_mai] Lista de destinatarios vacía después de parsear.');
-            \local_mai_notificaciones_mark_report_sent();
-            return;
-        }
+        foreach ($rules as $rule) {
+            mtrace('--------------------------------------------------');
+            mtrace('[local_mai] Procesando regla ID ' . $rule->id . ' - "' . $rule->name . '" (reportes)');
 
-        $now    = time();
-        $cutoff = $now - (30 * DAYSECS); // "activo" = últimos 30 días.
-
-        // ======================================================
-        // Determinar cursos monitoreados desde la configuración real.
-        // ======================================================
-        $monitoredids    = [];
-        $monitoredconfig = get_config('local_mai', 'monitored_courses'); // "3,7,9" o vacío
-
-        if (!empty($monitoredconfig)) {
-            $monitoredids = array_filter(array_map('intval', explode(',', $monitoredconfig)));
-        }
-
-        mtrace('[local_mai] Config monitored_courses (raw): ' . ($monitoredconfig === null ? 'NULL' : '"' . $monitoredconfig . '"'));
-        mtrace('[local_mai] Cursos monitoreados para reporte: ' . (empty($monitoredids) ? 'TODOS' : implode(',', $monitoredids)));
-
-        // ======================================================
-        // Obtener cursos a incluir.
-        // ======================================================
-        if (!empty($monitoredids)) {
-            $courses = $DB->get_records_list('course', 'id', $monitoredids, 'fullname ASC',
-                'id, fullname, shortname');
-        } else {
-            // Si no se configuró nada, se toman todos los visibles (comportamiento legacy).
-            $courses = $DB->get_records_select('course', 'id <> 1 AND visible = 1', null,
-                'fullname ASC', 'id, fullname, shortname');
-        }
-
-        if (empty($courses)) {
-            mtrace('[local_mai] No hay cursos visibles para generar reporte.');
-            \local_mai_notificaciones_mark_report_sent();
-            return;
-        }
-
-        // ======================================================
-        // Construir bloques por curso: usuarios y segmentos.
-        // ======================================================
-        $courseblocks   = [];
-        $totalcourses   = 0;
-        $totalactive    = 0;
-        $totalinactive  = 0;
-
-        foreach ($courses as $course) {
-            $context = \context_course::instance($course->id);
-
-            // Usuarios matriculados en el curso.
-            $enrolled = get_enrolled_users($context, '', 0,
-                'u.id, u.firstname, u.lastname, u.email', 'u.lastname, u.firstname');
-
-            if (empty($enrolled)) {
-                continue; // Curso vacío no cuenta.
+            // 1) ¿La regla tiene reportes activos?
+            // OJO: el campo de BD es "reportenabled" (sin "s").
+            if (empty($rule->reportenabled)) {
+                mtrace('[local_mai] Reportes desactivados para esta regla (reportenabled=0).');
+                continue;
             }
 
-            $totalcourses++;
+            // 2) ¿Toca enviar según la frecuencia y el último envío?
+            $last = (int)($rule->last_report_sent ?? 0);
+            $diff = $now - $last;
+            $freq = $rule->report_frequency ?? 'weekly';
 
-            // Último acceso por curso.
-            $accesses = $DB->get_records('user_lastaccess',
-                ['courseid' => $course->id], '', 'userid, timeaccess');
-
-            $accessmap = [];
-            foreach ($accesses as $a) {
-                $accessmap[$a->userid] = $a->timeaccess;
-            }
-
-            $rows = [];
-            foreach ($enrolled as $u) {
-                $timeaccess = $accessmap[$u->id] ?? 0;
-
-                if ($timeaccess == 0) {
-                    $segment = 'Nunca ingresó';
-                    $totalinactive++;
-                } else if ($timeaccess > $cutoff) {
-                    $segment = 'Activo';
-                    $totalactive++;
-                } else {
-                    $segment = 'Inactivo';
-                    $totalinactive++;
-                }
-
-                $rows[] = (object)[
-                    'segment'     => $segment,
-                    'fullname'    => fullname($u),
-                    'email'       => $u->email,
-                    'lastaccess'  => $timeaccess,
-                ];
-            }
-
-            if (!empty($rows)) {
-                $courseblocks[$course->id] = [
-                    'course' => $course,
-                    'rows'   => $rows,
-                ];
-            }
-        }
-
-        if (empty($courseblocks)) {
-            mtrace('[local_mai] No se encontraron usuarios matriculados en los cursos monitoreados.');
-            \local_mai_notificaciones_mark_report_sent();
-            return;
-        }
-
-        // Totales globales + detalle por curso para el correo.
-        $coursesdetailhtml = '<ul style="margin:4px 0 0 18px;padding:0;font-size:13px;color:#111827;">';
-
-        foreach ($courseblocks as $block) {
-            $course = $block['course'];
-            $rows   = $block['rows'];
-
-            $cactive   = 0;
-            $cinactive = 0;
-
-            foreach ($rows as $r) {
-                if ($r->segment === 'Activo') {
-                    $cactive++;
-                } else {
-                    $cinactive++;
+            $shouldsend = false;
+            if (empty($last)) {
+                // Nunca se ha enviado: se permite el primer envío.
+                $shouldsend = true;
+            } else {
+                switch ($freq) {
+                    case 'daily':
+                        $shouldsend = ($diff >= DAYSECS);
+                        break;
+                    case 'weekly':
+                        $shouldsend = ($diff >= WEEKSECS);
+                        break;
+                    case 'monthly':
+                        $shouldsend = ($diff >= 30 * DAYSECS);
+                        break;
+                    default:
+                        // Frecuencia desconocida -> no enviamos.
+                        $shouldsend = false;
                 }
             }
 
-            $coursesdetailhtml .= '<li><strong>' . s($course->fullname) . '</strong>: ' .
-                $cactive . ' activos, ' . $cinactive . ' inactivos</li>';
-        }
+            if (!$shouldsend) {
+                mtrace('[local_mai] No corresponde enviar reporte para esta regla según la frecuencia (' . $freq . ').');
+                continue;
+            }
 
-        $coursesdetailhtml .= '</ul>';
+            // 3) Destinatarios.
+            if (empty($rule->report_recipients)) {
+                mtrace('[local_mai] No hay destinatarios configurados en esta regla.');
+                continue;
+            }
 
-        $summarydata = [
-            'active'         => $totalactive,
-            'inactive'       => $totalinactive,
-            'courses'        => $totalcourses,
-            'courses_detail' => $coursesdetailhtml,
-        ];
+            $recipients = preg_split('/[,;]+/', $rule->report_recipients, -1, PREG_SPLIT_NO_EMPTY);
+            $recipients = array_map('trim', $recipients);
+            if (empty($recipients)) {
+                mtrace('[local_mai] Lista de destinatarios vacía después de parsear en esta regla.');
+                continue;
+            }
 
-        // ======================================================
-        // Generar archivo adjunto (PDF o XLSX).
-        // ======================================================
-        $format = $settings->report_format ?? 'pdf';
+            // 4) Resolver cursos monitoreados según la regla.
+            $courseids = $this->resolve_courses_for_rule($rule);
 
-        if ($format === 'xlsx') {
-            list($attachmentpath, $attachmentname) = $this->generate_xlsx_report($courseblocks);
-        } else {
-            list($attachmentpath, $attachmentname) = $this->generate_pdf_report($courseblocks);
-        }
+            if (empty($courseids)) {
+                mtrace('[local_mai] La regla no tiene cursos visibles en el ámbito definido.');
+                continue;
+            }
 
-        // ======================================================
-        // Construir correo HTML con plantilla + estilo MAI.
-        // ======================================================
+            $courseids = array_values(array_unique(array_map('intval', $courseids)));
 
-        // Este es el "cuerpo interno" editable desde la configuración.
-        $innerhtml = $settings->report_template ?? '';
+            // Obtenemos los cursos ordenados por nombre.
+            list($insql, $params) = $DB->get_in_or_equal($courseids, SQL_PARAMS_NAMED, 'cid');
+            $courses = $DB->get_records_select(
+                'course',
+                "id $insql",
+                $params,
+                'fullname ASC',
+                'id, fullname, shortname'
+            );
 
-        if (empty($innerhtml)) {
-            // Plantilla por defecto, solo contenido (sin el contenedor).
-            $innerhtml = '
+            if (empty($courses)) {
+                mtrace('[local_mai] No hay cursos visibles en esta regla para generar reporte.');
+                continue;
+            }
+
+            mtrace('[local_mai] Cursos monitoreados en esta regla: ' . count($courseids) .
+                ' (' . implode(',', $courseids) . ')');
+
+            // Ventana: "activo" = últimos 30 días.
+            $cutoff        = $now - (30 * DAYSECS);
+            $courseblocks  = [];
+            $totalcourses  = 0;
+            $totalactive   = 0;
+            $totalinactive = 0;
+
+            // 5) Construir bloques por curso.
+            foreach ($courses as $course) {
+                $context = \context_course::instance($course->id);
+
+                // Usuarios matriculados.
+                $enrolled = get_enrolled_users(
+                    $context,
+                    '',
+                    0,
+                    'u.id, u.firstname, u.lastname, u.email',
+                    'u.lastname, u.firstname'
+                );
+
+                if (empty($enrolled)) {
+                    continue; // Curso sin alumnos.
+                }
+
+                $totalcourses++;
+
+                // Último acceso por curso.
+                $accesses = $DB->get_records(
+                    'user_lastaccess',
+                    ['courseid' => $course->id],
+                    '',
+                    'userid, timeaccess'
+                );
+
+                $accessmap = [];
+                foreach ($accesses as $a) {
+                    $accessmap[$a->userid] = $a->timeaccess;
+                }
+
+                $rows = [];
+                foreach ($enrolled as $u) {
+                    $timeaccess = $accessmap[$u->id] ?? 0;
+
+                    if ($timeaccess == 0) {
+                        $segment = 'Nunca ingresó';
+                        $totalinactive++;
+                    } else if ($timeaccess > $cutoff) {
+                        $segment = 'Activo';
+                        $totalactive++;
+                    } else {
+                        $segment = 'Inactivo';
+                        $totalinactive++;
+                    }
+
+                    $rows[] = (object)[
+                        'segment'    => $segment,
+                        'fullname'   => fullname($u),
+                        'email'      => $u->email,
+                        'lastaccess' => $timeaccess,
+                    ];
+                }
+
+                if (!empty($rows)) {
+                    $courseblocks[$course->id] = [
+                        'course' => $course,
+                        'rows'   => $rows,
+                    ];
+                }
+            }
+
+            if (empty($courseblocks)) {
+                mtrace('[local_mai] No se encontraron usuarios matriculados en los cursos de esta regla.');
+                continue;
+            }
+
+            // 6) Resumen por curso para el correo.
+            $coursesdetailhtml = '<ul style="margin:4px 0 0 18px;padding:0;font-size:13px;color:#111827;">';
+
+            foreach ($courseblocks as $block) {
+                $course = $block['course'];
+                $rows   = $block['rows'];
+
+                $cactive   = 0;
+                $cinactive = 0;
+
+                foreach ($rows as $r) {
+                    if ($r->segment === 'Activo') {
+                        $cactive++;
+                    } else {
+                        $cinactive++;
+                    }
+                }
+
+                $coursesdetailhtml .= '<li><strong>' . s($course->fullname) . '</strong>: ' .
+                    $cactive . ' activos, ' . $cinactive . ' inactivos</li>';
+            }
+
+            $coursesdetailhtml .= '</ul>';
+
+            $summarydata = [
+                'active'         => $totalactive,
+                'inactive'       => $totalinactive,
+                'courses'        => $totalcourses,
+                'courses_detail' => $coursesdetailhtml,
+            ];
+
+            // 7) Generar archivo adjunto (PDF o XLSX) según la regla.
+            $format = $rule->report_format ?? 'pdf';
+
+            if ($format === 'xlsx') {
+                list($attachmentpath, $attachmentname) = $this->generate_xlsx_report($courseblocks);
+            } else {
+                list($attachmentpath, $attachmentname) = $this->generate_pdf_report($courseblocks);
+            }
+
+            // 8) Construir correo usando la plantilla de la regla.
+            $innerhtml = $rule->report_template ?? '';
+
+            if (empty($innerhtml)) {
+                $innerhtml = '
 <p style="margin:0 0 8px;">Resumen del periodo:</p>
 <ul style="margin:0 0 12px 18px;padding:0;font-size:13px;color:#111827;">
   <li><strong>Estudiantes activos:</strong> {{active}}</li>
@@ -215,10 +254,9 @@ class send_scheduled_reports extends scheduled_task {
 </ul>
 <p style="margin:0 0 4px;font-size:13px;color:#111827;">Cursos monitoreados:</p>
 {{courses_detail}}';
-        }
+            }
 
-        // Envolvemos el innerhtml en el layout rojo/naranja MAI.
-        $bodyhtml = '
+            $bodyhtml = '
 <div style="font-family:system-ui,Arial,sans-serif;max-width:640px;margin:0 auto;padding:16px;background:#f3f4f6;">
   <div style="background:#ffffff;border-radius:16px;overflow:hidden;border:1px solid #e5e7eb;box-shadow:0 16px 30px rgba(15,23,42,0.12);">
     <div style="background:#8C253E;color:#ffffff;padding:12px 20px;border-bottom:4px solid #FF7000;text-align:center;">
@@ -235,44 +273,127 @@ class send_scheduled_reports extends scheduled_task {
   </div>
 </div>';
 
-        // Reemplazar placeholders en TODO el body (incluye innerhtml).
-        foreach ($summarydata as $k => $v) {
-            $bodyhtml = str_replace('{{' . $k . '}}', $v, $bodyhtml);
-        }
-
-        $bodytext    = html_to_text($bodyhtml, 0, false);
-        $subject     = 'Reporte automático MAI - Participación';
-        $supportuser = \core_user::get_support_user();
-
-        foreach ($recipients as $email) {
-            if (empty($email)) {
-                continue;
+            foreach ($summarydata as $k => $v) {
+                $bodyhtml = str_replace('{{' . $k . '}}', $v, $bodyhtml);
             }
 
-            $fakeuser = (object)[
-                'id'         => -1,
-                'email'      => $email,
-                'username'   => $email,
-                'firstname'  => 'Coordinador',
-                'lastname'   => 'MAI',
-                'mailformat' => 1,
-            ];
+            $bodytext    = html_to_text($bodyhtml, 0, false);
+            $subject     = 'Reporte automático MAI - Participación';
+            $supportuser = \core_user::get_support_user();
 
-            $sent = email_to_user(
-                $fakeuser,
-                $supportuser,
-                $subject,
-                $bodytext,
-                $bodyhtml,
-                $attachmentpath,
-                $attachmentname
-            );
+            // 9) Enviar a todos los destinatarios de la regla.
+            foreach ($recipients as $email) {
+                if (empty($email)) {
+                    continue;
+                }
 
-            mtrace('[local_mai] Envío de reporte a ' . $email . ': ' . ($sent ? 'OK' : 'FALLÓ'));
+                $fakeuser = (object)[
+                    'id'         => -1,
+                    'email'      => $email,
+                    'username'   => $email,
+                    'firstname'  => 'Coordinador',
+                    'lastname'   => 'MAI',
+                    'mailformat' => 1,
+                ];
+
+                $sent = email_to_user(
+                    $fakeuser,
+                    $supportuser,
+                    $subject,
+                    $bodytext,
+                    $bodyhtml,
+                    $attachmentpath,
+                    $attachmentname
+                );
+
+                mtrace('[local_mai] Envío de reporte (regla ' . $rule->id . ') a ' . $email . ': ' . ($sent ? 'OK' : 'FALLÓ'));
+            }
+
+            // 10) Marcar timestamp de último envío para esta regla.
+            $rule->last_report_sent = $now;
+            $rule->timemodified    = $now;
+            $DB->update_record('local_mai_notif_rules', $rule);
+
+            mtrace('[local_mai] Regla ID ' . $rule->id . ' procesada (reportes).');
         }
 
-        \local_mai_notificaciones_mark_report_sent();
         mtrace('[local_mai] Tarea send_scheduled_reports finalizada.');
+    }
+
+    /**
+     * Resuelve los IDs de cursos visibles que aplican a una regla.
+     *
+     * Prioridad:
+     *  1) monitored_courses explícitos
+     *  2) cursos del cuatrimestre (termid)
+     *  3) cursos del programa (programid + sus subcategorías directas)
+     *  4) todos los cursos visibles (excepto el curso sitio)
+     *
+     * @param \stdClass $rule
+     * @return int[]
+     */
+    protected function resolve_courses_for_rule(\stdClass $rule): array {
+        global $DB;
+
+        // 1) Cursos seleccionados explícitamente.
+        if (!empty($rule->monitored_courses)) {
+            $ids = array_unique(array_filter(array_map('intval', explode(',', $rule->monitored_courses))));
+            if ($ids) {
+                list($inSql, $params) = $DB->get_in_or_equal($ids, SQL_PARAMS_NAMED);
+                $params['visible'] = 1;
+                $params['siteid']  = 1;
+                return $DB->get_fieldset_select(
+                    'course',
+                    'id',
+                    "visible = :visible AND id <> :siteid AND id $inSql",
+                    $params
+                );
+            }
+        }
+
+        // 2) Cuatrimestre concreto.
+        if (!empty($rule->termid)) {
+            return $DB->get_fieldset_select(
+                'course',
+                'id',
+                'category = :cat AND visible = 1 AND id <> 1',
+                ['cat' => $rule->termid]
+            );
+        }
+
+        // 3) Programa: cursos en la categoría raíz + sus subcategorías directas.
+        if (!empty($rule->programid)) {
+            $termcats = $DB->get_fieldset_select(
+                'course_categories',
+                'id',
+                'parent = :p',
+                ['p' => $rule->programid]
+            );
+
+            $catids   = $termcats;
+            $catids[] = (int)$rule->programid;
+            $catids   = array_unique(array_filter($catids));
+
+            if ($catids) {
+                list($inSql, $params) = $DB->get_in_or_equal($catids, SQL_PARAMS_NAMED);
+                $params['visible'] = 1;
+                $params['siteid']  = 1;
+                return $DB->get_fieldset_select(
+                    'course',
+                    'id',
+                    "visible = :visible AND id <> :siteid AND category $inSql",
+                    $params
+                );
+            }
+        }
+
+        // 4) Fallback: todos los cursos visibles (excepto el curso sitio).
+        return $DB->get_fieldset_select(
+            'course',
+            'id',
+            'visible = 1 AND id <> 1',
+            []
+        );
     }
 
     /**
@@ -316,7 +437,6 @@ class send_scheduled_reports extends scheduled_task {
 
             $pdf->Ln(4);
 
-            // Tabla sin rejilla completa: solo líneas horizontales suaves.
             $html  = '<table cellspacing="0" cellpadding="3" width="100%">';
             $html .= '<tr style="font-weight:bold;background-color:#f3f4f6;border-bottom:0.5px solid #000;">';
             $html .= '<td width="16%">Segmento</td>';
@@ -356,13 +476,12 @@ class send_scheduled_reports extends scheduled_task {
      * @param array $courseblocks
      * @return array [ruta, nombrearchivo]
      */
- protected function generate_xlsx_report(array $courseblocks): array {
+    protected function generate_xlsx_report(array $courseblocks): array {
         // Carpeta temporal de Moodle: $CFG->tempdir/local_mai_reports.
         $tempdir  = make_temp_directory('local_mai_reports');
         $filename = 'reporte_participacion_' . date('Ymd_His') . '.xlsx';
         $fullpath = $tempdir . '/' . $filename;
 
-        // Creamos el workbook de PhpSpreadsheet (usamos el namespace completo).
         $spreadsheet = new \PhpOffice\PhpSpreadsheet\Spreadsheet();
 
         // Quitamos la hoja por defecto y luego creamos una por curso.
@@ -374,17 +493,14 @@ class send_scheduled_reports extends scheduled_task {
             $course = $block['course'];
             $rows   = $block['rows'];
 
-            // Nombre base de la hoja: shortname si existe, si no fullname.
             $basename = $course->fullname ?: $course->fullname;
             $basename = clean_param($basename, PARAM_NOTAGS);
-            // Excel no permite : \ / ? * [ ]
             $basename = preg_replace('/[:\\\\\\/\\?\\*\\[\\]]/', '', $basename);
             $basename = trim($basename);
             if ($basename === '') {
                 $basename = 'Curso ' . $course->id;
             }
 
-            // Limitamos longitud y aseguramos unicidad dentro del libro.
             $base = \core_text::substr($basename, 0, 28);
             $sheetname = $base;
             $suffix = 1;
@@ -395,7 +511,6 @@ class send_scheduled_reports extends scheduled_task {
             }
             $usednames[$sheetname] = true;
 
-            // Crear hoja para este curso.
             $sheet = $spreadsheet->createSheet();
             $sheet->setTitle($sheetname);
 
@@ -405,13 +520,11 @@ class send_scheduled_reports extends scheduled_task {
             $sheet->setCellValue('C1', 'Correo');
             $sheet->setCellValue('D1', 'Último acceso');
 
-            // Estilo de encabezado: negritas y centrado.
             $sheet->getStyle('A1:D1')->getFont()->setBold(true);
             $sheet->getStyle('A1:D1')->getAlignment()->setHorizontal(
                 \PhpOffice\PhpSpreadsheet\Style\Alignment::HORIZONTAL_CENTER
             );
 
-            // Filas de datos.
             $rownum = 2;
             foreach ($rows as $r) {
                 $last = $r->lastaccess ? userdate($r->lastaccess) : '-';
@@ -424,20 +537,17 @@ class send_scheduled_reports extends scheduled_task {
                 $rownum++;
             }
 
-            // Anchos de columna.
             $sheet->getColumnDimension('A')->setWidth(14);
             $sheet->getColumnDimension('B')->setWidth(28);
             $sheet->getColumnDimension('C')->setWidth(30);
             $sheet->getColumnDimension('D')->setWidth(18);
         }
 
-        // Por seguridad: si por alguna razón no se creó ninguna hoja, crea una vacía.
         if ($spreadsheet->getSheetCount() === 0) {
             $sheet = $spreadsheet->createSheet();
             $sheet->setTitle('Reporte');
         }
 
-        // Guardar a archivo físico (NO a php://output).
         $writer = new \PhpOffice\PhpSpreadsheet\Writer\Xlsx($spreadsheet);
         $writer->save($fullpath);
 

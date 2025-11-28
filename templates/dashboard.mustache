@@ -53,9 +53,7 @@
 
 .local-mai-header-tag {
     padding: 4px 12px;
-    border-radius: 999px;
-    background: linear-gradient(135deg, var(--mai-maroon), var(--mai-orange));
-    color: #ffffff;
+    color: #8C253E;
     font-size: 0.75rem;
     font-weight: 600;
     text-transform: uppercase;
@@ -201,6 +199,20 @@
         max-width: 100%;
     }
 }
+/* Hacer la card un contenedor flex en columna */
+.local-mai-module-card {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Empujar el link al fondo de la card y alinearlo a la misma altura */
+.local-mai-module-footer {
+    margin-top: auto;      /* empuja el footer hacia abajo */
+    padding-top: 8px;      /* separacion con el contenido */
+    display: flex;
+    justify-content: flex-end;
+}
+
 </style>
 
 <div class="local-mai-dashboard-wrapper">
@@ -227,11 +239,11 @@
                 <div class="local-mai-module-icon">
                     <i class="fa-solid fa-user-group" aria-hidden="true"></i>
                 </div>
-                <span class="local-mai-module-badge">Participación</span>
+                <span class="local-mai-module-badge">Reporte</span>
             </div>
-            <h3 class="local-mai-module-title">Seguimiento de participación</h3>
+            <h3 class="local-mai-module-title">Participacion por curso</h3>
             <p class="local-mai-module-desc">
-                Vista general de actividad, accesos y participación de los estudiantes.
+                Vista general de actividad, accesos y participación de los estudiantes por curso.
             </p>
             <div class="local-mai-module-footer">
                 <span class="local-mai-module-link">
@@ -247,11 +259,11 @@
                 <div class="local-mai-module-icon">
                     <i class="fa-solid fa-diagram-project" aria-hidden="true"></i>
                 </div>
-                <span class="local-mai-module-badge">Estructura</span>
+                <span class="local-mai-module-badge">Reporte</span>
             </div>
             <h3 class="local-mai-module-title">Estructura académica</h3>
             <p class="local-mai-module-desc">
-                Reportes por programa, cuatrimestre y general.
+               Participación por programada académico y cuatrimestre.
             </p>
             <div class="local-mai-module-footer">
                 <span class="local-mai-module-link">
@@ -267,15 +279,15 @@
                 <div class="local-mai-module-icon">
                     <i class="fa-solid fa-chart-line" aria-hidden="true"></i>
                 </div>
-                <span class="local-mai-module-badge">Panel</span>
+                <span class="local-mai-module-badge">Reporte</span>
             </div>
-            <h3 class="local-mai-module-title">Panel de control</h3>
+            <h3 class="local-mai-module-title">Reporte en gráficos</h3>
             <p class="local-mai-module-desc">
                 Dashboard con gráficos interactivos.
             </p>
             <div class="local-mai-module-footer">
                 <span class="local-mai-module-link">
-                    Abrir panel
+                    Ver módulo
                     <span><i class="fa-solid fa-arrow-right-long"></i></span>
                 </span>
             </div>

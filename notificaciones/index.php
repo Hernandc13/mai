@@ -1,7 +1,8 @@
 <?php
 // local/mai/notificaciones/index.php
 /**
- * Configuración de envío automatizado de reportes y alertas inteligentes MAI.
+ * Configuración de reglas de envío automatizado de reportes y alertas inteligentes MAI
+ * por programa y cuatrimestre (local_mai_notif_rules).
  *
  * @package   local_mai
  */
@@ -12,144 +13,169 @@ require_login();
 global $CFG, $DB, $PAGE, $OUTPUT, $USER;
 
 $systemcontext = context_system::instance();
+require_capability('local/mai:viewreport', $systemcontext);
 
 require_once($CFG->libdir . '/moodlelib.php');
 require_once($CFG->libdir . '/weblib.php');
 
 // ---------------------------------------------------------------------
-// MODO AJAX: action=save_config | test_email
+// Manejo de acciones (guardar / eliminar / seleccionar regla).
 // ---------------------------------------------------------------------
-$action = optional_param('action', '', PARAM_ALPHANUMEXT);
+$ruleid = optional_param('ruleid', 0, PARAM_INT);     // Regla actual (0 = nueva).
+$op     = optional_param('op', '', PARAM_ALPHA);      // save | delete
+$open   = optional_param('open', 0, PARAM_BOOL);      // 1 = abrir modal
 
-if (!empty($action)) {
-    require_sesskey();
-    header('Content-Type: application/json; charset=utf-8');
+$baseurl = new moodle_url('/local/mai/notificaciones/index.php');
 
-    $response = [
-        'status'  => 'error',
-        'message' => 'Acción no válida.',
-    ];
+if ($op === 'delete' && $ruleid > 0 && confirm_sesskey()) {
+    // Borrado de regla.
+    $DB->delete_records('local_mai_notif_rules', ['id' => $ruleid]);
+    redirect($baseurl, 'Regla eliminada correctamente.', 2);
+}
 
-    try {
-        switch ($action) {
+// Guardar regla (crear o actualizar).
+if ($op === 'save' && confirm_sesskey()) {
+    $data = new stdClass();
 
-            case 'save_config':
-                $autoreports_enabled = optional_param('autoreports_enabled', 0, PARAM_BOOL) ? 1 : 0;
-                $alerts_enabled      = optional_param('alerts_enabled', 0, PARAM_BOOL) ? 1 : 0;
+    $data->id = $ruleid > 0 ? $ruleid : null;
 
-                $report_frequency   = optional_param('report_frequency', 'daily', PARAM_ALPHA);
-                $report_recipients  = optional_param('report_recipients', '',   PARAM_RAW_TRIMMED);
-                $report_format      = optional_param('report_format', 'pdf',    PARAM_ALPHA);
-                $report_template    = optional_param('report_template', '',     PARAM_RAW);
+    $data->name    = required_param('name', PARAM_TEXT);
+    $data->enabled = optional_param('enabled', 0, PARAM_BOOL) ? 1 : 0;
 
-                $alert_days_inactive    = optional_param('alert_days_inactive',    7,  PARAM_INT);
-                $alert_group_inactivity = optional_param('alert_group_inactivity', 50, PARAM_INT);
-                $alert_recipients       = optional_param('alert_recipients',       '', PARAM_RAW_TRIMMED);
-                $alert_student_message  = optional_param('alert_student_message',  '', PARAM_RAW);
-                $alert_coord_message    = optional_param('alert_coord_message',    '', PARAM_RAW);
+    $data->programid = optional_param('programid', 0, PARAM_INT);
+    $data->termid    = optional_param('termid', 0, PARAM_INT);
 
-                // Canales de alerta (checkboxes alert_channels[]).
-                $alert_channels_arr = [];
-                if (!empty($_POST['alert_channels']) && is_array($_POST['alert_channels'])) {
-                    foreach ($_POST['alert_channels'] as $ch) {
-                        $ch = clean_param($ch, PARAM_ALPHA); // email | internal
-                        if ($ch !== '') {
-                            $alert_channels_arr[] = $ch;
-                        }
-                    }
-                }
-                $alert_channels = implode(',', $alert_channels_arr);
+    // Cursos visibles seleccionados.
+// Cursos visibles seleccionados (sin duplicados).
+$monitored_arr = optional_param_array('monitored_courses', [], PARAM_INT);
+$monitored_arr = array_values(array_unique(array_filter(array_map('intval', $monitored_arr))));
+$data->monitored_courses = implode(',', $monitored_arr);
 
-                // Cursos monitoreados (multi-select).
-                $monitored_arr = optional_param_array('monitored_courses', [], PARAM_INT);
-                $monitored_arr = array_filter(array_map('intval', $monitored_arr));
-                $monitored_courses = implode(',', $monitored_arr);
 
-                // Guardar config del plugin local_mai.
-                set_config('autoreports_enabled', $autoreports_enabled, 'local_mai');
-                set_config('alerts_enabled',      $alerts_enabled,      'local_mai');
+    // Reportes.
+    $data->reportenabled     = optional_param('reportenabled', 0, PARAM_BOOL) ? 1 : 0;
+    $data->report_frequency  = optional_param('report_frequency', 'weekly', PARAM_ALPHA);
+    $data->report_format     = optional_param('report_format', 'pdf', PARAM_ALPHA);
+    $data->report_recipients = optional_param('report_recipients', '', PARAM_RAW_TRIMMED);
+    $data->report_template   = optional_param('report_template', '', PARAM_RAW);
 
-                set_config('report_frequency',  $report_frequency,  'local_mai');
-                set_config('report_recipients', $report_recipients, 'local_mai');
-                set_config('report_format',     $report_format,     'local_mai');
-                set_config('report_template',   $report_template,   'local_mai');
+    // Alertas.
+    $data->alertsenabled          = optional_param('alertsenabled', 0, PARAM_BOOL) ? 1 : 0;
+    $data->alert_days_inactive    = optional_param('alert_days_inactive', 7, PARAM_INT);
+    $data->alert_group_inactivity = optional_param('alert_group_inactivity', 50, PARAM_INT);
+    $data->alert_recipients       = optional_param('alert_recipients', '', PARAM_RAW_TRIMMED);
+    $data->alert_student_message  = optional_param('alert_student_message', '', PARAM_RAW);
+    $data->alert_coord_message    = optional_param('alert_coord_message', '', PARAM_RAW);
 
-                set_config('alert_days_inactive',    $alert_days_inactive,    'local_mai');
-                set_config('alert_group_inactivity', $alert_group_inactivity, 'local_mai');
-                set_config('alert_recipients',       $alert_recipients,       'local_mai');
-                set_config('alert_student_message',  $alert_student_message,  'local_mai');
-                set_config('alert_coord_message',    $alert_coord_message,    'local_mai');
-                set_config('alert_channels',         $alert_channels,         'local_mai');
-
-                set_config('monitored_courses',      $monitored_courses,      'local_mai');
-
-                $response['status']  = 'ok';
-                $response['message'] = 'Configuración guardada correctamente.';
-                break;
-
-            case 'test_email':
-                $config = get_config('local_mai');
-                $to     = $USER;
-
-                $subject = 'Prueba de envío automático MAI';
-                $bodytext = "Hola {$USER->firstname},\n\n" .
-                    "Este es un correo de prueba del módulo de envío automatizado MAI.\n\n" .
-                    "Configuración actual:\n" .
-                    "- Envío automatizado: " . (!empty($config->autoreports_enabled) ? 'activo' : 'inactivo') . "\n" .
-                    "- Frecuencia: " . ($config->report_frequency ?? 'daily') . "\n" .
-                    "- Formato: " . ($config->report_format ?? 'pdf') . "\n" .
-                    "- Destinatarios (reales): " . ($config->report_recipients ?? '(no definidos)') . "\n\n" .
-                    "Si recibes este mensaje, el servidor de correo está respondiendo correctamente.\n\n" .
-                    "Atentamente,\n MAI";
-
-                $bodyhtml = nl2br(s($bodytext));
-
-                $supportuser = \core_user::get_support_user();
-                $sent = email_to_user($to, $supportuser, $subject, $bodytext, $bodyhtml);
-
-                if ($sent) {
-                    $response['status']  = 'ok';
-                    $response['message'] = 'Correo de prueba enviado correctamente al usuario actual.';
-                } else {
-                    $response['status']  = 'error';
-                    $response['message'] = 'No se pudo enviar el correo de prueba. Revisa la configuración SMTP.';
-                }
-                break;
+    // Canales de alerta (checkboxes alert_channels[]).
+    $alert_channels_arr = [];
+    if (!empty($_POST['alert_channels']) && is_array($_POST['alert_channels'])) {
+        foreach ($_POST['alert_channels'] as $ch) {
+            $ch = clean_param($ch, PARAM_ALPHA); // email | internal
+            if ($ch !== '') {
+                $alert_channels_arr[] = $ch;
+            }
         }
+    }
+    $data->alert_channels = implode(',', $alert_channels_arr);
 
-    } catch (\Throwable $e) {
-        $response['status']  = 'error';
-        $response['message'] = 'Error en index.php (AJAX): ' . $e->getMessage();
+    // Campos de control de ejecución (solo cuando es nuevo).
+    if (empty($data->id)) {
+        $data->last_report_sent     = 0;
+        $data->last_alerts_checked  = 0;
+        $data->timecreated          = time();
+        $data->timemodified         = time();
+        $data->id = $DB->insert_record('local_mai_notif_rules', $data);
+    } else {
+        $data->timemodified = time();
+        $DB->update_record('local_mai_notif_rules', $data);
     }
 
-    echo json_encode($response);
-    exit;
+    // Al guardar, regresamos a la lista sin abrir modal.
+    redirect(new moodle_url($baseurl, ['ruleid' => $data->id]), 'Regla guardada correctamente.', 2);
 }
 
 // ---------------------------------------------------------------------
-// MODO NORMAL: renderizar página.
+// Carga de datos para la vista.
 // ---------------------------------------------------------------------
 
-$pagetitle = 'Envío automatizado de reportes y alertas';
+$pagetitle = 'Programación de reportes y alertas MAI';
 
-$PAGE->set_url(new moodle_url('/local/mai/notificaciones/index.php'));
+$PAGE->set_url($baseurl);
 $PAGE->set_context($systemcontext);
 $PAGE->set_pagelayout('report');
 $PAGE->set_title($pagetitle);
 $PAGE->set_heading($pagetitle);
 
-
-// jQuery
 $PAGE->requires->jquery();
 
-// Cargamos config del plugin local_mai.
+// 1) Cargar todas las reglas.
+$rules = $DB->get_records('local_mai_notif_rules', null, 'programid ASC, termid ASC, name ASC');
+
+// 2) Categorías (programas y cuatrimestres).
+$cats     = $DB->get_records('course_categories', null, 'parent ASC, name ASC', 'id, name, parent, visible');
+$catsbyid = $cats;
+
+// 3) Cursos visibles (no ocultos).
+$courses = $DB->get_records_select(
+    'course',
+    'id <> 1 AND visible = 1',
+    null,
+    'fullname ASC',
+    'id, fullname, shortname, category'
+);
+
+// 4) Estructuras para JS: cuatrimestres por programa y cursos por cuatrimestre.
+$termsbyprogram = [];
+foreach ($cats as $cat) {
+    if ((int)$cat->parent !== 0) {
+        $termsbyprogram[$cat->parent][] = [
+            'id'   => (int)$cat->id,
+            'name' => $cat->name
+        ];
+    }
+}
+
+$coursesbyterm   = [];
+$allcourseslist  = [];
+foreach ($courses as $c) {
+    $allcourseslist[] = [
+        'id'       => (int)$c->id,
+        'name'     => $c->fullname,
+        'category' => (int)$c->category
+    ];
+    if (!isset($coursesbyterm[$c->category])) {
+        $coursesbyterm[$c->category] = [];
+    }
+    $coursesbyterm[$c->category][] = [
+        'id'   => (int)$c->id,
+        'name' => $c->fullname
+    ];
+}
+
+// Mapas rápidos para contar cursos monitoreados.
+$coursecountbyterm = [];
+foreach ($coursesbyterm as $termid => $list) {
+    $coursecountbyterm[$termid] = count($list);
+}
+
+$coursecountbyprogram = [];
+foreach ($termsbyprogram as $pid => $terms) {
+    $total = 0;
+    foreach ($terms as $t) {
+        $tid = (int)$t['id'];
+        if (isset($coursecountbyterm[$tid])) {
+            $total += $coursecountbyterm[$tid];
+        }
+    }
+    $coursecountbyprogram[$pid] = $total;
+}
+$allcoursescount = count($allcourseslist);
+
+// 5) Config global (defaults de textos).
 $config = get_config('local_mai');
 
-// Valores por defecto.
-$reportfrequency   = $config->report_frequency ?? 'weekly';
-$reportformat      = $config->report_format ?? 'pdf';
-$reportrecipients  = $config->report_recipients ?? '';
-$reporttemplate    = $config->report_template ?? '
+$default_report_template = $config->report_template ?? '
 <div style="font-family:system-ui,Arial,sans-serif;max-width:620px;margin:0 auto;">
   <h2 style="margin:0 0 8px;color:#111827;font-size:18px;">Reporte automático MAI</h2>
   <p style="margin:0 0 10px;color:#4b5563;font-size:13px;">Resumen de participación del periodo.</p>
@@ -161,23 +187,63 @@ $reporttemplate    = $config->report_template ?? '
   <p style="margin:0;font-size:11px;color:#9ca3af;">El detalle por curso se adjunta en el reporte PDF/Excel.</p>
 </div>';
 
-$alertdaysinactive     = isset($config->alert_days_inactive) ? (int)$config->alert_days_inactive : 7;
-$alertgroupinactivity  = isset($config->alert_group_inactivity) ? (int)$config->alert_group_inactivity : 50;
-$alertstudentmsg       = $config->alert_student_message ?? '{{fullname}}, te invitamos a continuar tus actividades en la plataforma. Tu progreso es importante.';
-$alertcoordmsg         = $config->alert_coord_message   ?? 'Se ha detectado un grupo con alta inactividad. Te sugerimos revisar las actividades y contactar a los estudiantes.';
-$alertrecipients       = $config->alert_recipients ?? '';
-$alertchannels         = $config->alert_channels  ?? 'email,internal';
-$alerts_enabled        = isset($config->alerts_enabled) ? (int)$config->alerts_enabled : 1;
-$autoreports_enabled   = isset($config->autoreports_enabled) ? (int)$config->autoreports_enabled : 1;
+$default_student_msg = $config->alert_student_message ??
+    '{{fullname}}, te invitamos a continuar tus actividades en la plataforma. Tu progreso es importante.';
 
-// Cursos para selector.
-$courses = $DB->get_records_select('course', 'id <> 1 AND visible = 1', null, 'fullname ASC', 'id, fullname, shortname');
-$monitored = !empty($config->monitored_courses) ? array_filter(array_map('intval', explode(',', $config->monitored_courses))) : [];
+$default_coord_msg = $config->alert_coord_message ??
+    'Se ha detectado un grupo con alta inactividad. Te sugerimos revisar las actividades y contactar a los estudiantes.';
+
+// 6) Determinar la regla actual (para el formulario del modal).
+$current = new stdClass();
+if ($ruleid > 0 && isset($rules[$ruleid])) {
+    $current = $rules[$ruleid];
+} else {
+    // Nueva regla: defaults.
+    $current->id                     = 0;
+    $current->name                   = '';
+    $current->enabled                = 1;
+    $current->programid              = 0;
+    $current->termid                 = 0;
+    $current->monitored_courses      = '';
+    $current->reportenabled          = 1;
+    $current->report_frequency       = 'weekly';
+    $current->report_format          = 'pdf';
+    $current->report_recipients      = '';
+    $current->report_template        = $default_report_template;
+    $current->alertsenabled          = 1;
+    $current->alert_days_inactive    = 7;
+    $current->alert_group_inactivity = 50;
+    $current->alert_recipients       = '';
+    $current->alert_student_message  = $default_student_msg;
+    $current->alert_coord_message    = $default_coord_msg;
+    $current->alert_channels         = 'internal';
+}
+
+// Arrays para selects.
+$current_monitored_courses = [];
+if (!empty($current->monitored_courses)) {
+    $current_monitored_courses = array_filter(
+        array_map('intval', explode(',', $current->monitored_courses))
+    );
+}
+
+// Helper para nombre de programa / cuatrimestre.
+function local_mai_notif_cat_name($catsbyid, $id) {
+    if (empty($id)) {
+        return 'Todos';
+    }
+    return isset($catsbyid[$id]) ? $catsbyid[$id]->name : ('ID ' . $id);
+}
 
 echo $OUTPUT->header();
 
 // FontAwesome
 echo '<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer" />';
+
+// DataTables (solo para la tabla de reglas).
+echo '<link rel="stylesheet" href="https://cdn.datatables.net/1.13.8/css/jquery.dataTables.min.css" />';
+echo '<script src="https://cdn.datatables.net/1.13.8/js/jquery.dataTables.min.js"></script>';
+
 // Botón para volver al dashboard principal de MAI.
 $backurl = new moodle_url('/local/mai/index.php');
 
@@ -203,6 +269,7 @@ echo html_writer::end_div();
     --mai-dark: #111827;
     --mai-gray: #6B7280;
     --mai-light: #F3F4F6;
+    --mai-border-soft: #E5E7EB;
 }
 
 /* Wrapper general */
@@ -210,7 +277,7 @@ echo html_writer::end_div();
     max-width: 1100px;
     margin: 0 auto;
     padding-bottom: 32px;
-    font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
 .local-mai-notif-intro {
@@ -219,14 +286,110 @@ echo html_writer::end_div();
     margin-bottom: 18px;
 }
 
-/* Grid de columnas principales */
+/* Listado de reglas */
+.local-mai-rules-list {
+    margin-bottom: 22px;
+    border-radius: 14px;
+    border: 1px solid #e5e7eb;
+    background: #ffffff;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.06);
+    padding: 14px 18px 10px;
+}
+
+.local-mai-rules-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+}
+
+.local-mai-rules-header-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--mai-dark);
+}
+
+.local-mai-rules-note {
+    font-size: 0.78rem;
+    color: var(--mai-gray);
+}
+
+.local-mai-rules-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    margin-top: 6px;
+}
+
+.local-mai-rules-table th,
+.local-mai-rules-table td {
+    padding: 6px 8px;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.local-mai-rules-table th {
+    text-align: left;
+    font-weight: 600;
+    color: var(--mai-dark);
+    background: #f9fafb;
+}
+
+.local-mai-rules-table td.local-mai-rules-numcourses {
+    text-align: center;
+}
+
+/* Estilos DataTables básicos */
+.dataTables_filter {
+    margin-bottom: 6px;
+    font-size: 0.8rem;
+}
+.dataTables_filter input {
+    padding: 4px 6px;
+    border-radius: 999px;
+    border: 1px solid #d1d5db;
+    font-size: 0.8rem;
+}
+.dataTables_info {
+    font-size: 0.75rem;
+    color: var(--mai-gray);
+}
+.dataTables_paginate {
+    font-size: 0.8rem;
+}
+
+/* Badges */
+.local-mai-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+}
+.local-mai-badge-on {
+    background: #ecfdf3;
+    color: #15803d;
+}
+.local-mai-badge-off {
+    background: #fef2f2;
+    color: #b91c1c;
+}
+
+.local-mai-rule-actions a {
+    font-size: 0.8rem;
+    text-decoration: none;
+    margin-right: 6px;
+}
+
+/* Grid dentro del modal */
 .local-mai-notif-grid {
     display: grid;
     grid-template-columns: 1fr;
     gap: 20px;
 }
 
-/* Cards horizontales */
+/* Cards */
 .local-mai-card {
     border-radius: 18px;
     border: 1px solid #e5e7eb;
@@ -234,33 +397,27 @@ echo html_writer::end_div();
     box-shadow: 0 16px 30px rgba(15, 23, 42, 0.08);
     overflow: hidden;
     display: flex;
-    flex-direction: row;
-    min-height: 180px;
+    flex-direction: column;
 }
 
-.local-mai-card-horizontal {
-    display: flex;
-    flex-direction: row;
-}
-
-.local-mai-card-header-side {
-    width: 260px;
-    min-width: 230px;
-    padding: 18px 20px;
+/* Header horizontal de cada card */
+.local-mai-card-header {
+    padding: 14px 18px;
     background: linear-gradient(135deg, var(--mai-primary), var(--mai-accent));
     color: #ffffff;
     display: flex;
-    flex-direction: column;
+    align-items: center;
     justify-content: space-between;
-}
-
-.local-mai-card-header-top {
-    display: flex;
     gap: 12px;
-    align-items: flex-start;
 }
 
-/* Icono redondo sin deformarse */
+.local-mai-card-header-main {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+}
+
+/* Icono redondo */
 .local-mai-card-icon {
     flex: 0 0 36px;
     width: 36px;
@@ -270,37 +427,30 @@ echo html_writer::end_div();
     align-items: center;
     justify-content: center;
     font-size: 1rem;
-    background: rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.15);
 }
 
 .local-mai-card-title {
     margin: 0;
-    font-size: 1.05rem;
+    font-size: 1.02rem;
     font-weight: 700;
 }
 
 .local-mai-card-subtitle {
-    font-size: 0.82rem;
+    font-size: 0.8rem;
     opacity: 0.9;
-    margin-top: 4px;
+    margin-top: 2px;
 }
 
-.local-mai-card-header-tags {
-    margin-top: 14px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-}
-
-.local-mai-pill {
-    display: inline-flex;
-    align-items: center;
+/* Pastilla "Bloque X de 3" */
+.local-mai-card-header-step {
+    font-size: 0.75rem;
     padding: 4px 10px;
     border-radius: 999px;
-    border: 1px solid rgba(255,255,255,0.35);
-    font-size: 0.72rem;
+    border: 1px solid rgba(255,255,255,0.75);
+    background: rgba(255,255,255,0.08);
     text-transform: uppercase;
-    letter-spacing: 0.04em;
+    letter-spacing: 0.05em;
 }
 
 /* Body de card */
@@ -338,7 +488,7 @@ echo html_writer::end_div();
     margin-top: 3px;
 }
 
-/* Inputs premium */
+/* Inputs */
 .local-mai-card-body input[type="text"],
 .local-mai-card-body input[type="number"],
 .local-mai-card-body textarea,
@@ -394,9 +544,11 @@ echo html_writer::end_div();
 
 /* Card Acciones (footer) */
 .local-mai-card-footer {
-    margin-top: 18px;
-    flex-direction: column;
-    padding: 0;
+    border-radius: 18px;
+    border: 1px solid #e5e7eb;
+    background: #ffffff;
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.08);
+    margin-top: 20px;
 }
 
 .local-mai-card-footer-header {
@@ -422,22 +574,7 @@ echo html_writer::end_div();
     gap: 8px;
 }
 
-.local-mai-status {
-    margin-top: 8px;
-    font-size: 0.8rem;
-}
-
-.local-mai-status-success {
-    color: #16a34a;
-    font-weight: 600;
-}
-
-.local-mai-status-error {
-    color: #dc2626;
-    font-weight: 600;
-}
-
-/* Botones premium */
+/* Botones */
 .btn-primary {
     background: var(--mai-primary);
     border: none !important;
@@ -474,33 +611,25 @@ echo html_writer::end_div();
     color: #111827 !important;
 }
 
-/* Misma altura para todos los editores HTML de esta página */
+.local-mai-btn-small {
+    font-size: 0.8rem;
+    padding: 6px 12px;
+}
+
+/* Misma altura para los editores HTML */
 .tox.tox-tinymce,
 .editor_atto {
     min-height: 260px;
 }
 
-/* por si aplica TinyMCE con iframe interno */
 .tox .tox-edit-area__iframe {
     min-height: 220px;
 }
 
-@media (max-width: 900px) {
-    .local-mai-card-horizontal {
-        flex-direction: column;
-    }
-    .local-mai-card-header-side {
-        width: 100%;
-        min-width: 0;
-    }
-    .local-mai-fields-grid {
-        grid-template-columns: 1fr;
-    }
-}
 /* Botón regresar al dashboard MAI */
 .local-mai-panel-back {
     display: flex;
-    justify-content: flex-start; /* cambia a flex-end si lo quieres a la derecha */
+    justify-content: flex-start;
     margin-bottom: 6px;
 }
 
@@ -512,7 +641,7 @@ echo html_writer::end_div();
     border-radius: 999px;
     border: 1px solid var(--mai-border-soft);
     background: #ffffff;
-    color: var(--mai-text-muted);
+    color: var(--mai-gray);
     font-size: 0.8rem;
     font-weight: 500;
     text-decoration: none;
@@ -523,7 +652,7 @@ echo html_writer::end_div();
 .local-mai-btn-back:hover,
 .local-mai-btn-back:focus {
     border-color: rgba(140,37,62,0.35);
-    color: var(--mai-maroon);
+    color: var(--mai-primary);
     box-shadow: 0 8px 18px rgba(15,23,42,0.10);
     transform: translateY(-1px);
 }
@@ -531,377 +660,752 @@ echo html_writer::end_div();
 .local-mai-btn-back-icon {
     font-size: 0.85rem;
 }
+
+/* MODAL pantalla completa */
+.mai-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.55);
+    z-index: 9999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 12px;
+}
+
+.mai-modal-visible {
+    display: flex;
+}
+
+.mai-modal-dialog {
+    width: min(1100px, 100%);
+    height: 92vh;
+    background: #f9fafb;
+    border-radius: 18px;
+    box-shadow: 0 22px 40px rgba(15, 23, 42, 0.35);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.mai-modal-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid #e5e7eb;
+    background: linear-gradient(90deg, #8C253E, #FF7000);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.mai-modal-header-title {
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+.mai-modal-header-subtitle {
+    font-size: 0.8rem;
+    opacity: 0.9;
+}
+
+.mai-modal-header-left {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.mai-modal-close-link {
+    font-size: 0.8rem;
+    border-radius: 999px;
+    padding: 5px 10px;
+    border: 1px solid rgba(255,255,255,0.7);
+    color: #111827;
+    background: #ffffff;
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.mai-modal-body {
+    padding: 16px 18px 18px;
+    overflow-y: auto;
+}
+
+/* Nota de ayuda dentro del modal: todo es una sola regla */
+.mai-rule-help {
+    margin-bottom: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: #FFF7ED;
+    border: 1px dashed rgba(255,112,0,0.55);
+    font-size: 0.8rem;
+    color: #7c2d12;
+}
+
+/* Responsive */
+@media (max-width: 900px) {
+    .local-mai-fields-grid {
+        grid-template-columns: 1fr;
+    }
+}
+.local-mai-card {
+    border-radius: 18px;
+    border: 1px solid #e5e7eb;
+    background: #ffffff;
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.08);
+    overflow: hidden;   /* IMPORTANTE para que el header use el radio del card */
+    display: flex;
+    flex-direction: column;
+}
+
+.local-mai-card-header {
+    padding: 14px 18px;
+    background: linear-gradient(135deg, var(--mai-primary), var(--mai-accent));
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border-radius: 18px 18px 0 0; /* header = tapa superior del card */
+}
+
 </style>
 
 <div class="local-mai-notif-wrapper">
 
     <p class="local-mai-notif-intro">
-        Configura el <strong>envío automático de reportes</strong> y las
-        <strong>alertas de actividad</strong> para coordinadores, tutores y estudiantes.
+        Administra reglas para el <strong>envío automático de reportes</strong> y
+        <strong>alertas de actividad</strong> por programa y cuatrimestre.
     </p>
 
-    <form id="mai-notif-form">
-
-        <div class="local-mai-notif-grid">
-            <!-- CARD 1: Envío de reportes (horizontal) -->
-            <div class="local-mai-card local-mai-card-horizontal">
-                <div class="local-mai-card-header-side">
-                    <div class="local-mai-card-header-top">
-                        <div class="local-mai-card-icon">
-                            <i class="fa-solid fa-chart-line"></i>
-                        </div>
-                        <div>
-                            <h3 class="local-mai-card-title">Envío automatizado de reportes</h3>
-                            <div class="local-mai-card-subtitle">
-                                Frecuencia, destinatarios, formato y cursos a monitorear.
-                            </div>
-                        </div>
-                    </div>
-                    <div class="local-mai-card-header-tags">
-                        <span class="local-mai-pill">Reportes MAI</span>
-                        <span class="local-mai-pill">Coordinadores</span>
-                    </div>
+    <!-- Listado de reglas -->
+    <div class="local-mai-rules-list">
+        <div class="local-mai-rules-header">
+            <div>
+                <div class="local-mai-rules-header-title">
+                    Reglas configuradas
                 </div>
-
-                <div class="local-mai-card-body">
-                    <div class="local-mai-fields-grid">
-
-                        <div class="local-mai-field-group">
-                            <label class="local-mai-field-label" for="autoreports_enabled">
-                                Activar envío automatizado
-                            </label>
-                            <div>
-                                <label>
-                                    <input type="checkbox" name="autoreports_enabled" id="autoreports_enabled" value="1" <?php echo $autoreports_enabled ? 'checked' : ''; ?>>
-                                    Habilitar este módulo
-                                </label>
-                            </div>
-                            <div class="local-mai-field-help">
-                                Cuando está activo, se generan y envían reportes recurrentes según la frecuencia seleccionada.
-                            </div>
-                        </div>
-
-                        <div class="local-mai-field-group">
-                            <label class="local-mai-field-label" for="report_frequency">
-                                Frecuencia de envío
-                            </label>
-                            <select name="report_frequency" id="report_frequency" class="form-control">
-                                <option value="daily"   <?php echo $reportfrequency === 'daily' ? 'selected' : ''; ?>>Diaria</option>
-                                <option value="weekly"  <?php echo $reportfrequency === 'weekly' ? 'selected' : ''; ?>>Semanal</option>
-                                <option value="monthly" <?php echo $reportfrequency === 'monthly' ? 'selected' : ''; ?>>Mensual</option>
-                            </select>
-                            <div class="local-mai-field-help">
-                                Define cada cuánto tiempo se envían los reportes consolidados.
-                            </div>
-                        </div>
-
-                        <div class="local-mai-field-group local-mai-field-full">
-                            <label class="local-mai-field-label" for="monitored_courses">
-                                Cursos monitoreados
-                            </label>
-                            <select name="monitored_courses[]" id="monitored_courses" class="form-control" multiple size="7">
-                                <?php foreach ($courses as $c): ?>
-                                    <option value="<?php echo $c->id; ?>" <?php echo in_array($c->id, $monitored) ? 'selected' : ''; ?>>
-                                        <?php echo s($c->fullname); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <div class="local-mai-field-help">
-                                Solo los cursos seleccionados se incluirán en los reportes automáticos.
-                            </div>
-                        </div>
-
-                        <div class="local-mai-field-group local-mai-field-full">
-                            <label class="local-mai-field-label" for="report_recipients">
-                                Destinatarios del reporte
-                            </label>
-                            <textarea
-                                   name="report_recipients"
-                                   id="report_recipients"
-                                   rows="3"
-                                   class="form-control"
-                                   placeholder="correo1@dominio.com, correo2@dominio.com"><?php echo s($reportrecipients); ?></textarea>
-                            <div class="local-mai-field-help">
-                                Correos de coordinadores/tutores (separados por coma).
-                            </div>
-                        </div>
-
-                        <div class="local-mai-field-group">
-                            <label class="local-mai-field-label">
-                                Formato del reporte adjunto
-                            </label>
-                            <div class="local-mai-inline">
-                                <label class="local-mai-chip">
-                                    <input type="radio" name="report_format" value="xlsx" <?php echo $reportformat === 'xlsx' ? 'checked' : ''; ?>>
-                                    Excel (.xlsx)
-                                </label>
-                                <label class="local-mai-chip">
-                                    <input type="radio" name="report_format" value="pdf" <?php echo $reportformat === 'pdf' ? 'checked' : ''; ?>>
-                                    PDF (.pdf)
-                                </label>
-                            </div>
-                            <div class="local-mai-field-help">
-                                El adjunto incluirá el detalle de participación por curso.
-                            </div>
-                        </div>
-
-                        <div class="local-mai-field-group local-mai-field-full">
-                            <label class="local-mai-field-label" for="report_template">
-                                Plantilla de correo al coordinador
-                            </label>
-                            <textarea name="report_template"
-                                      id="report_template"
-                                      rows="6"
-                                      class="form-control"><?php echo $reporttemplate; ?></textarea>
-                            <div class="local-mai-field-help">
-                                Placeholders: <code>{{active}}</code> (estudiantes activos),
-                                <code>{{inactive}}</code> (estudiantes inactivos),
-                                <code>{{courses}}</code> (cursos monitoreados).
-                            </div>
-                        </div>
-
-                    </div>
+                <div class="local-mai-rules-note">
+                    Cada regla define programa, cuatrimestre, cursos, frecuencia y destinatarios.
                 </div>
             </div>
-
-            <!-- CARD 2: Alertas inteligentes (horizontal) -->
-            <div class="local-mai-card local-mai-card-horizontal">
-                <div class="local-mai-card-header-side">
-                    <div class="local-mai-card-header-top">
-                        <div class="local-mai-card-icon">
-                            <i class="fa-solid fa-bell"></i>
-                        </div>
-                        <div>
-                            <h3 class="local-mai-card-title">Alertas y notificaciones</h3>
-                            <div class="local-mai-card-subtitle">
-                                Umbrales de inactividad y mensajes al estudiante y coordinador.
-                            </div>
-                        </div>
-                    </div>
-                    <div class="local-mai-card-header-tags">
-                        <span class="local-mai-pill">Alertas automáticas</span>
-                        <span class="local-mai-pill">Seguimiento</span>
-                    </div>
-                </div>
-
-                <div class="local-mai-card-body">
-                    <div class="local-mai-fields-grid">
-
-                        <div class="local-mai-field-group">
-                            <label class="local-mai-field-label" for="alerts_enabled">
-                                Activar sistema de alertas
-                            </label>
-                            <div>
-                                <label>
-                                    <input type="checkbox" name="alerts_enabled" id="alerts_enabled" value="1" <?php echo $alerts_enabled ? 'checked' : ''; ?>>
-                                    Habilitar alertas automáticas
-                                </label>
-                            </div>
-                            <div class="local-mai-field-help">
-                                Si está activo, el sistema enviará alertas basadas en inactividad individual y por grupo.
-                            </div>
-                        </div>
-
-                        <div class="local-mai-field-group">
-                            <label class="local-mai-field-label" for="alert_days_inactive">
-                                Días sin ingresar (por estudiante)
-                            </label>
-                            <input type="number"
-                                   name="alert_days_inactive"
-                                   id="alert_days_inactive"
-                                   class="form-control"
-                                   min="1"
-                                   value="<?php echo $alertdaysinactive; ?>">
-                            <div class="local-mai-field-help">
-                                Número de días consecutivos sin acceso para generar alerta.
-                            </div>
-                        </div>
-
-                        <div class="local-mai-field-group">
-                            <label class="local-mai-field-label" for="alert_group_inactivity">
-                                % de inactividad por grupo
-                            </label>
-                            <input type="number"
-                                   name="alert_group_inactivity"
-                                   id="alert_group_inactivity"
-                                   class="form-control"
-                                   min="0"
-                                   max="100"
-                                   value="<?php echo $alertgroupinactivity; ?>">
-                            <div class="local-mai-field-help">
-                                Porcentaje mínimo de estudiantes inactivos para disparar alerta de grupo.
-                            </div>
-                        </div>
-
-                        <div class="local-mai-field-group local-mai-field-full">
-                            <label class="local-mai-field-label" for="alert_recipients">
-                                Destinatarios de alertas por grupo
-                            </label>
-                            <textarea
-                                   name="alert_recipients"
-                                   id="alert_recipients"
-                                   rows="3"
-                                   class="form-control"
-                                   placeholder="correo1@dominio.com, correo2@dominio.com"><?php echo s($alertrecipients); ?></textarea>
-                            <div class="local-mai-field-help">
-                                Correos para el resumen de inactividad por curso/grupo (separados por coma).
-                            </div>
-                        </div>
-
-                        <div class="local-mai-field-group local-mai-field-full">
-                            <label class="local-mai-field-label">
-                                Canal de notificación al estudiante
-                            </label>
-                            <div class="local-mai-inline">
-                                <label class="local-mai-chip">
-                                    <input type="checkbox" name="alert_channels[]" value="email"
-                                        <?php echo (strpos($alertchannels, 'email') !== false) ? 'checked' : ''; ?>>
-                                    Correo electrónico
-                                </label>
-                                <label class="local-mai-chip">
-                                    <input type="checkbox" name="alert_channels[]" value="internal"
-                                        <?php echo (strpos($alertchannels, 'internal') !== false) ? 'checked' : ''; ?>>
-                                    Mensaje interno
-                                </label>
-                            </div>
-                        </div>
-
-                        <div class="local-mai-field-group local-mai-field-full">
-                            <label class="local-mai-field-label" for="alert_student_message">
-                                Mensaje para el estudiante
-                            </label>
-                            <textarea name="alert_student_message"
-                                      id="alert_student_message"
-                                      rows="4"
-                                      class="form-control"><?php echo $alertstudentmsg; ?></textarea>
-                            <div class="local-mai-field-help">
-                                Puedes usar <code>{{fullname}}</code> para insertar el nombre del estudiante.
-                            </div>
-                        </div>
-
-                        <div class="local-mai-field-group local-mai-field-full">
-                            <label class="local-mai-field-label" for="alert_coord_message">
-                                Mensaje para coordinador/tutor
-                            </label>
-                            <textarea name="alert_coord_message"
-                                      id="alert_coord_message"
-                                      rows="4"
-                                      class="form-control"><?php echo $alertcoordmsg; ?></textarea>
-                        </div>
-
-                    </div>
-                </div>
+            <div>
+                <a href="<?php echo (new moodle_url($baseurl, ['open' => 1]))->out(false); ?>"
+                   class="btn-secondary local-mai-btn-small">
+                    <i class="fa fa-plus"></i> Agregar regla
+                </a>
             </div>
         </div>
 
-        <!-- CARD 3: Acciones -->
-        <div class="local-mai-card local-mai-card-footer">
-            <div class="local-mai-card-footer-header">
-                <div class="local-mai-card-footer-title">
-                    Acciones sobre la configuración
+        <?php if (!empty($rules)) : ?>
+            <table class="local-mai-rules-table" id="local-mai-rules-table">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Programa</th>
+                        <th>Cuatrimestre</th>
+                        <th>Cursos monitoreados</th>
+                        <th>Reportes</th>
+                        <th>Alertas</th>
+                        <th>Estado</th>
+                        <th style="width:140px;">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                <?php foreach ($rules as $r): ?>
+                    <?php
+                        // Cantidad de cursos monitoreados por regla.
+                        $monitoredcount = 0;
+                     if (!empty($r->monitored_courses)) {
+    $ids = array_unique(array_filter(array_map('intval', explode(',', $r->monitored_courses))));
+    $monitoredcount = count($ids);
+}else {
+                            if (!empty($r->termid) && isset($coursecountbyterm[$r->termid])) {
+                                $monitoredcount = $coursecountbyterm[$r->termid];
+                            } elseif (!empty($r->programid) && isset($coursecountbyprogram[$r->programid])) {
+                                $monitoredcount = $coursecountbyprogram[$r->programid];
+                            } else {
+                                $monitoredcount = $allcoursescount;
+                            }
+                        }
+                    ?>
+                    <tr>
+                        <td><?php echo format_string($r->name); ?></td>
+                        <td><?php echo s(local_mai_notif_cat_name($catsbyid, $r->programid)); ?></td>
+                        <td><?php echo s(local_mai_notif_cat_name($catsbyid, $r->termid)); ?></td>
+                        <td class="local-mai-rules-numcourses"><?php echo (int)$monitoredcount; ?></td>
+                        <td>
+                            <span class="local-mai-badge <?php echo $r->reportenabled ? 'local-mai-badge-on' : 'local-mai-badge-off'; ?>">
+                                <?php echo $r->reportenabled ? 'Activa' : 'Inactiva'; ?>
+                            </span>
+                        </td>
+                        <td>
+                            <span class="local-mai-badge <?php echo $r->alertsenabled ? 'local-mai-badge-on' : 'local-mai-badge-off'; ?>">
+                                <?php echo $r->alertsenabled ? 'Activa' : 'Inactiva'; ?>
+                            </span>
+                        </td>
+                        <td>
+                            <span class="local-mai-badge <?php echo $r->enabled ? 'local-mai-badge-on' : 'local-mai-badge-off'; ?>">
+                                <?php echo $r->enabled ? 'Activa' : 'Inactiva'; ?>
+                            </span>
+                        </td>
+                        <td class="local-mai-rule-actions">
+                            <a href="<?php echo (new moodle_url($baseurl, ['ruleid' => $r->id, 'open' => 1]))->out(); ?>">
+                                <i class="fa fa-pen-to-square"></i> Editar
+                            </a>
+                            <a href="<?php echo (new moodle_url($baseurl, ['ruleid' => $r->id, 'op' => 'delete', 'sesskey' => sesskey()]))->out(); ?>"
+                               onclick="return confirm('¿Seguro que deseas eliminar esta regla?');">
+                                <i class="fa fa-trash"></i> Eliminar
+                            </a>
+                        </td>
+                    </tr>
+                <?php endforeach; ?>
+                </tbody>
+            </table>
+        <?php else: ?>
+            <p class="local-mai-rules-note">
+                Aún no hay reglas configuradas. Usa el botón <strong>“Agregar regla”</strong> para crear la primera.
+            </p>
+        <?php endif; ?>
+    </div>
+</div>
+
+<?php
+// Datos para JS (selects dependientes).
+$termsjson       = json_encode($termsbyprogram, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+$coursesjson     = json_encode($coursesbyterm,   JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+$allcoursesjson  = json_encode($allcourseslist,  JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+$preselectedjson = json_encode(array_values($current_monitored_courses), JSON_NUMERIC_CHECK);
+?>
+
+<!-- MODAL pantalla completa (formulario de regla) -->
+<div id="mai-fullscreen-modal" class="mai-modal-overlay<?php echo $open ? ' mai-modal-visible' : ''; ?>">
+    <div class="mai-modal-dialog">
+        <div class="mai-modal-header">
+            <div class="mai-modal-header-left">
+                <div class="mai-modal-header-title">
+                    <?php echo $current->id ? 'Editar regla de notificaciones MAI' : 'Nueva regla de notificaciones MAI'; ?>
+                </div>
+                <div class="mai-modal-header-subtitle">
+                    Los 3 bloques siguientes pertenecen a la misma regla. Completa y guarda al final.
                 </div>
             </div>
-            <div class="local-mai-card-footer-body">
-                <div class="local-mai-inline" style="justify-content: space-between; align-items:center;">
-                    <div>
-                        <div class="local-mai-field-help">
-                            Guarda los cambios o envía un correo de prueba con la configuración actual.
-                        </div>
-                    </div>
-                    <div class="local-mai-actions">
-                        <button type="submit" class="btn btn-primary" id="mai-notif-save-btn">
-                            <i class="fa fa-save"></i> Guardar configuración
-                        </button>
-                        <button type="button" class="btn btn-secondary" id="mai-notif-test-btn">
-                            <i class="fa fa-paper-plane"></i> Enviar correo de prueba
-                        </button>
-                    </div>
-                </div>
-                <div class="local-mai-status" id="mai-notif-status"></div>
+            <div>
+                <!-- Cierra modal sin guardar (regresa a la tabla) -->
+                <a href="<?php echo $baseurl->out(false); ?>" class="mai-modal-close-link">
+                    Cerrar sin guardar
+                </a>
             </div>
         </div>
+        <div class="mai-modal-body">
 
-        <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
-    </form>
+            <form id="mai-notif-form" method="post" action="<?php echo $baseurl->out(false); ?>">
+                <input type="hidden" name="sesskey" value="<?php echo sesskey(); ?>">
+                <input type="hidden" name="op" value="save">
+                <input type="hidden" name="ruleid" value="<?php echo (int)$current->id; ?>">
+
+                <div class="mai-rule-help">
+                    <strong>Nota:</strong> Los bloques <strong>Datos generales</strong>,
+                    <strong>Reportes automáticos</strong> y <strong>Alertas de inactividad</strong>
+                    forman parte de <u>una sola regla</u>.
+                </div>
+
+                <div class="local-mai-notif-grid">
+                    <!-- CARD 0: Datos generales de la regla -->
+                    <div class="local-mai-card">
+                        <div class="local-mai-card-header">
+                            <div class="local-mai-card-header-main">
+                                <div class="local-mai-card-icon">
+                                    <i class="fa-solid fa-sliders"></i>
+                                </div>
+                                <div>
+                                    <h3 class="local-mai-card-title">
+                                        Datos generales
+                                    </h3>
+                                    <div class="local-mai-card-subtitle">
+                                        Nombre de la regla y ámbito (programa/cuatrimestre).
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="local-mai-card-header-step">
+                                Bloque 1 de 3
+                            </div>
+                        </div>
+
+                        <div class="local-mai-card-body">
+                            <div class="local-mai-fields-grid">
+                                <div class="local-mai-field-group local-mai-field-full">
+                                    <label class="local-mai-field-label" for="name">
+                                        Nombre de la regla
+                                    </label>
+                                    <input type="text"
+                                           name="name"
+                                           id="name"
+                                           class="form-control"
+                                           value="<?php echo s($current->name); ?>"
+                                           placeholder="Ej. Medicina / 1er cuatrimestre">
+                                    <div class="local-mai-field-help">
+                                        Nombre corto para identificar la configuración.
+                                    </div>
+                                </div>
+
+                                <div class="local-mai-field-group">
+                                    <label class="local-mai-field-label" for="programid">
+                                        Programa académico (categoría raíz)
+                                    </label>
+                                    <select name="programid" id="programid" class="form-control">
+                                        <option value="0"<?php echo empty($current->programid) ? ' selected' : ''; ?>>Todos los programas</option>
+                                        <?php foreach ($cats as $cat): ?>
+                                            <?php if ((int)$cat->parent === 0): ?>
+                                                <option value="<?php echo $cat->id; ?>"<?php echo ($current->programid == $cat->id) ? ' selected' : ''; ?>>
+                                                    <?php echo s($cat->name); ?>
+                                                </option>
+                                            <?php endif; ?>
+                                        <?php endforeach; ?>
+                                    </select>
+                                    <div class="local-mai-field-help">
+                                        Programa al que aplica la regla.
+                                    </div>
+                                </div>
+
+                                <div class="local-mai-field-group">
+                                    <label class="local-mai-field-label" for="termid">
+                                        Cuatrimestre (subcategoría)
+                                    </label>
+                                    <select name="termid" id="termid" class="form-control">
+                                        <option value="0">Todos los cuatrimestres</option>
+                                    </select>
+                                    <div class="local-mai-field-help">
+                                        Se cargan los cuatrimestres del programa elegido.
+                                    </div>
+                                </div>
+
+                                <div class="local-mai-field-group">
+                                    <label class="local-mai-field-label" for="enabled">
+                                        Estado de la regla
+                                    </label>
+                                    <div>
+                                        <label>
+                                            <input type="checkbox" name="enabled" id="enabled" value="1"
+                                                <?php echo !empty($current->enabled) ? 'checked' : ''; ?>>
+                                            Regla activa
+                                        </label>
+                                    </div>
+                                    <div class="local-mai-field-help">
+                                        Si la desactivas, no se generarán reportes ni alertas.
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CARD 1: Envío de reportes -->
+                    <div class="local-mai-card">
+                        <div class="local-mai-card-header">
+                            <div class="local-mai-card-header-main">
+                                <div class="local-mai-card-icon">
+                                    <i class="fa-solid fa-chart-line"></i>
+                                </div>
+                                <div>
+                                    <h3 class="local-mai-card-title">Reportes automáticos</h3>
+                                    <div class="local-mai-card-subtitle">
+                                        Frecuencia, cursos y destinatarios de los reportes.
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="local-mai-card-header-step">
+                                Bloque 2 de 3
+                            </div>
+                        </div>
+
+                        <div class="local-mai-card-body">
+                            <div class="local-mai-fields-grid">
+
+                                <div class="local-mai-field-group">
+                                    <label class="local-mai-field-label" for="reportenabled">
+                                        Envío automatizado
+                                    </label>
+                                    <div>
+                                        <label>
+                                            <input type="checkbox" name="reportenabled" id="reportenabled" value="1"
+                                                <?php echo !empty($current->reportenabled) ? 'checked' : ''; ?>>
+                                            Habilitar reportes automáticos
+                                        </label>
+                                    </div>
+                                    <div class="local-mai-field-help">
+                                        Si está activo, el cron enviará reportes con esta frecuencia.
+                                    </div>
+                                </div>
+
+                                <div class="local-mai-field-group">
+                                    <label class="local-mai-field-label" for="report_frequency">
+                                        Frecuencia de envío
+                                    </label>
+                                    <select name="report_frequency" id="report_frequency" class="form-control">
+                                        <option value="daily"   <?php echo $current->report_frequency === 'daily' ? 'selected' : ''; ?>>Diaria</option>
+                                        <option value="weekly"  <?php echo $current->report_frequency === 'weekly' ? 'selected' : ''; ?>>Semanal</option>
+                                        <option value="monthly" <?php echo $current->report_frequency === 'monthly' ? 'selected' : ''; ?>>Mensual</option>
+                                    </select>
+                                    <div class="local-mai-field-help">
+                                        Cada cuánto se envía el resumen.
+                                    </div>
+                                </div>
+
+                                <div class="local-mai-field-group local-mai-field-full">
+                                    <label class="local-mai-field-label" for="monitored_courses">
+                                        Cursos monitoreados (solo visibles)
+                                    </label>
+                                    <select name="monitored_courses[]" id="monitored_courses" class="form-control" multiple size="7">
+                                        <!-- Opciones se llenan por JS -->
+                                    </select>
+                                    <div class="local-mai-field-help">
+                                        Si no eliges cursos, se tomará todo el ámbito (programa/cuatrimestre).
+                                    </div>
+                                </div>
+
+                                <div class="local-mai-field-group local-mai-field-full">
+                                    <label class="local-mai-field-label" for="report_recipients">
+                                        Destinatarios del reporte
+                                    </label>
+                                    <textarea
+                                           name="report_recipients"
+                                           id="report_recipients"
+                                           rows="3"
+                                           class="form-control"
+                                           placeholder="correo1@dominio.com, correo2@dominio.com"><?php
+                                           echo s($current->report_recipients ?? '');
+                                           ?></textarea>
+                                    <div class="local-mai-field-help">
+                                        Correos separados por coma.
+                                    </div>
+                                </div>
+
+                                <div class="local-mai-field-group">
+                                    <label class="local-mai-field-label">
+                                        Formato del adjunto
+                                    </label>
+                                    <div class="local-mai-inline">
+                                        <label class="local-mai-chip">
+                                            <input type="radio" name="report_format" value="xlsx" <?php echo $current->report_format === 'xlsx' ? 'checked' : ''; ?>>
+                                            Excel (.xlsx)
+                                        </label>
+                                        <label class="local-mai-chip">
+                                            <input type="radio" name="report_format" value="pdf" <?php echo $current->report_format === 'pdf' ? 'checked' : ''; ?>>
+                                            PDF (.pdf)
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="local-mai-field-group local-mai-field-full">
+                                    <label class="local-mai-field-label" for="report_template">
+                                        Plantilla de correo al coordinador
+                                    </label>
+                                    <textarea name="report_template"
+                                              id="report_template"
+                                              rows="6"
+                                              class="form-control"><?php
+                                              echo $current->report_template ?: $default_report_template;
+                                              ?></textarea>
+                                    <div class="local-mai-field-help">
+                                        Placeholders: <code>{{active}}</code>, <code>{{inactive}}</code>, <code>{{courses}}</code>.
+                                    </div>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CARD 2: Alertas inteligentes -->
+                    <div class="local-mai-card">
+                        <div class="local-mai-card-header">
+                            <div class="local-mai-card-header-main">
+                                <div class="local-mai-card-icon">
+                                    <i class="fa-solid fa-bell"></i>
+                                </div>
+                                <div>
+                                    <h3 class="local-mai-card-title">Alertas de inactividad</h3>
+                                    <div class="local-mai-card-subtitle">
+                                        Umbrales y mensajes para estudiantes y coordinadores.
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="local-mai-card-header-step">
+                                Bloque 3 de 3
+                            </div>
+                        </div>
+
+                        <div class="local-mai-card-body">
+                            <div class="local-mai-fields-grid">
+
+                                <div class="local-mai-field-group">
+                                    <label class="local-mai-field-label" for="alertsenabled">
+                                        Sistema de alertas
+                                    </label>
+                                    <div>
+                                        <label>
+                                            <input type="checkbox" name="alertsenabled" id="alertsenabled" value="1"
+                                                <?php echo !empty($current->alertsenabled) ? 'checked' : ''; ?>>
+                                            Habilitar alertas automáticas
+                                        </label>
+                                    </div>
+                                    <div class="local-mai-field-help">
+                                        Aplica a los cursos definidos en la regla.
+                                    </div>
+                                </div>
+
+                                <div class="local-mai-field-group">
+                                    <label class="local-mai-field-label" for="alert_days_inactive">
+                                        Días sin ingresar (por estudiante)
+                                    </label>
+                                    <input type="number"
+                                           name="alert_days_inactive"
+                                           id="alert_days_inactive"
+                                           class="form-control"
+                                           min="1"
+                                           value="<?php echo (int)$current->alert_days_inactive; ?>">
+                                </div>
+
+                                <div class="local-mai-field-group">
+                                    <label class="local-mai-field-label" for="alert_group_inactivity">
+                                        % de inactividad por grupo
+                                    </label>
+                                    <input type="number"
+                                           name="alert_group_inactivity"
+                                           id="alert_group_inactivity"
+                                           class="form-control"
+                                           min="0"
+                                           max="100"
+                                           value="<?php echo (int)$current->alert_group_inactivity; ?>">
+                                    <div class="local-mai-field-help">
+                                        Porcentaje mínimo de inactivos para alerta de grupo.
+                                    </div>
+                                </div>
+
+                                <div class="local-mai-field-group local-mai-field-full">
+                                    <label class="local-mai-field-label" for="alert_recipients">
+                                        Destinatarios de alertas por grupo
+                                    </label>
+                                    <textarea
+                                           name="alert_recipients"
+                                           id="alert_recipients"
+                                           rows="3"
+                                           class="form-control"
+                                           placeholder="correo1@dominio.com, correo2@dominio.com"><?php
+                                           echo s($current->alert_recipients ?? '');
+                                           ?></textarea>
+                                    <div class="local-mai-field-help">
+                                        Correos para alertas de inactividad (separados por coma).
+                                    </div>
+                                </div>
+
+                                <div class="local-mai-field-group local-mai-field-full">
+                                    <label class="local-mai-field-label">
+                                        Canales de notificación al estudiante
+                                    </label>
+                                    <div class="local-mai-inline">
+                                        <label class="local-mai-chip">
+                                            <input type="checkbox" name="alert_channels[]" value="email"
+                                                <?php echo (strpos($current->alert_channels ?? '', 'email') !== false) ? 'checked' : ''; ?>>
+                                            Correo electrónico
+                                        </label>
+                                        <label class="local-mai-chip">
+                                            <input type="checkbox" name="alert_channels[]" value="internal"
+                                                <?php echo (strpos($current->alert_channels ?? 'internal', 'internal') !== false) ? 'checked' : ''; ?>>
+                                            Mensaje interno
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="local-mai-field-group local-mai-field-full">
+                                    <label class="local-mai-field-label" for="alert_student_message">
+                                        Mensaje para el estudiante
+                                    </label>
+                                    <textarea name="alert_student_message"
+                                              id="alert_student_message"
+                                              rows="4"
+                                              class="form-control"><?php
+                                              echo $current->alert_student_message ?: $default_student_msg;
+                                              ?></textarea>
+                                    <div class="local-mai-field-help">
+                                        Puedes usar <code>{{fullname}}</code> para el nombre del estudiante.
+                                    </div>
+                                </div>
+
+                                <div class="local-mai-field-group local-mai-field-full">
+                                    <label class="local-mai-field-label" for="alert_coord_message">
+                                        Mensaje para coordinador/tutor
+                                    </label>
+                                    <textarea name="alert_coord_message"
+                                              id="alert_coord_message"
+                                              rows="4"
+                                              class="form-control"><?php
+                                              echo $current->alert_coord_message ?: $default_coord_msg;
+                                              ?></textarea>
+                                </div>
+
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- CARD 3: Acciones -->
+                <div class="local-mai-card local-mai-card-footer">
+                    <div class="local-mai-card-footer-header">
+                        <div class="local-mai-card-footer-title">
+                            Guardar configuración de la regla
+                        </div>
+                    </div>
+                    <div class="local-mai-card-footer-body">
+                        <div class="local-mai-inline" style="justify-content: space-between; align-items:center;">
+                            <div>
+                                <div class="local-mai-field-help">
+                                    El cron usará esta regla para generar reportes y alertas
+                                    según el programa, cuatrimestre y cursos definidos.
+                                </div>
+                            </div>
+                            <div class="local-mai-actions">
+                                <button type="submit" class="btn btn-primary" id="mai-notif-save-btn">
+                                    <i class="fa fa-save"></i>
+                                    <?php echo $current->id ? 'Actualizar regla' : 'Crear regla'; ?>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </form>
+
+        </div>
+    </div>
 </div>
 
 <script>
 (function($) {
-
-    var ajaxUrl = '<?php echo $PAGE->url->out(false); ?>';
-    console.log('MAI notificaciones JS cargado. AJAX URL:', ajaxUrl);
-
-    function showStatus(message, isError) {
-        var $status = $('#mai-notif-status');
-        $status
-            .removeClass('local-mai-status-success local-mai-status-error')
-            .addClass(isError ? 'local-mai-status-error' : 'local-mai-status-success')
-            .text(message);
-    }
-
-    // Guardar configuración
-    $('#mai-notif-form').on('submit', function(e) {
-        e.preventDefault();
-
-        var $btn = $('#mai-notif-save-btn');
-        $btn.prop('disabled', true).text('Guardando...');
-
-        var data = $(this).serializeArray();
-        data.push({name: 'action', value: 'save_config'});
-
-        $.ajax({
-            url: ajaxUrl,
-            method: 'POST',
-            data: $.param(data),
-            dataType: 'json'
-        }).done(function(resp) {
-            console.log('MAI save_config response:', resp);
-            if (resp && resp.status === 'ok') {
-                showStatus(resp.message || 'Configuración guardada correctamente.', false);
-            } else {
-                showStatus(resp && resp.message ? resp.message : 'Ocurrió un problema al guardar la configuración.', true);
-            }
-        }).fail(function(xhr, textStatus, errorThrown) {
-            console.error('MAI save_config AJAX error:', textStatus, errorThrown, xhr.responseText);
-            showStatus('Error de comunicación con el servidor.', true);
-        }).always(function() {
-            $btn.prop('disabled', false).text('Guardar configuración');
-        });
+    // ------------------------
+    // DataTables en tabla de reglas
+    // ------------------------
+    $(function() {
+        var $tbl = $('#local-mai-rules-table');
+        if ($tbl.length) {
+            $tbl.DataTable({
+                paging: true,
+                searching: true,
+                info: true,
+                lengthChange: false,   // sin menú de "entries"
+                ordering: true,
+                order: [[0, 'asc']],
+                autoWidth: false,
+                language: {
+                    decimal:        "",
+                    emptyTable:     "No hay reglas registradas",
+                    info:           "Mostrando _START_ a _END_ de _TOTAL_ reglas",
+                    infoEmpty:      "Mostrando 0 a 0 de 0 reglas",
+                    infoFiltered:   "(filtrado de _MAX_ reglas en total)",
+                    thousands:      ",",
+                    loadingRecords: "Cargando...",
+                    processing:     "Procesando...",
+                    search:         "Buscar:",
+                    zeroRecords:    "No se encontraron resultados",
+                    paginate: {
+                        first:    "Primero",
+                        last:     "Último",
+                        next:     "Siguiente",
+                        previous: "Anterior"
+                    }
+                }
+            });
+        }
     });
 
-    // Enviar correo de prueba
-    $('#mai-notif-test-btn').on('click', function() {
-        var $btn = $(this);
-        $btn.prop('disabled', true).text('Enviando prueba...');
+    // ------------------------
+    // JS selects dependientes y cursos
+    // ------------------------
+    var termsByProgram     = <?php echo $termsjson; ?> || {};
+    var coursesByTerm      = <?php echo $coursesjson; ?> || {};
+    var allCourses         = <?php echo $allcoursesjson; ?> || [];
+    var preselectedCourses = <?php echo $preselectedjson; ?> || [];
 
-        var data = $('#mai-notif-form').serializeArray();
-        data.push({name: 'action', value: 'test_email'});
+    var initialProgram = <?php echo (int)$current->programid; ?>;
+    var initialTerm    = <?php echo (int)$current->termid; ?>;
 
-        $.ajax({
-            url: ajaxUrl,
-            method: 'POST',
-            data: $.param(data),
-            dataType: 'json'
-        }).done(function(resp) {
-            console.log('MAI test_email response:', resp);
-            if (resp && resp.status === 'ok') {
-                showStatus(resp.message || 'Correo de prueba enviado correctamente.', false);
-            } else {
-                showStatus(resp && resp.message ? resp.message : 'No se pudo enviar el correo de prueba.', true);
+    function rebuildTermOptions() {
+        var programId = parseInt($('#programid').val(), 10) || 0;
+        var $term = $('#termid');
+
+        $term.empty();
+        $term.append($('<option>', { value: 0, text: 'Todos los cuatrimestres' }));
+
+        if (programId > 0 && termsByProgram[programId]) {
+            termsByProgram[programId].forEach(function(t) {
+                var opt = $('<option>', { value: t.id, text: t.name });
+                if (t.id === initialTerm) {
+                    opt.attr('selected', 'selected');
+                }
+                $term.append(opt);
+            });
+        }
+
+        if (programId !== initialProgram) {
+            $term.val('0');
+        }
+    }
+
+    function rebuildCourseOptions() {
+        var programId = parseInt($('#programid').val(), 10) || 0;
+        var termId    = parseInt($('#termid').val(), 10) || 0;
+        var $courses  = $('#monitored_courses');
+
+        var currentSelected = ($courses.val() || []).map(function(v) { return parseInt(v, 10); });
+        var baseSelected    = currentSelected.length ? currentSelected : preselectedCourses;
+        var selectedMap     = {};
+        baseSelected.forEach(function(id) { selectedMap[id] = true; });
+
+        var list = [];
+
+        if (termId > 0 && coursesByTerm[termId]) {
+            list = coursesByTerm[termId].slice();
+        } else if (programId > 0 && termsByProgram[programId]) {
+            termsByProgram[programId].forEach(function(t) {
+                if (coursesByTerm[t.id]) {
+                    list = list.concat(coursesByTerm[t.id]);
+                }
+            });
+        } else {
+            list = allCourses.slice();
+        }
+
+        $courses.empty();
+        list.forEach(function(c) {
+            var opt = $('<option>', { value: c.id, text: c.name });
+            if (selectedMap[c.id]) {
+                opt.attr('selected', 'selected');
             }
-        }).fail(function(xhr, textStatus, errorThrown) {
-            console.error('MAI test_email AJAX error:', textStatus, errorThrown, xhr.responseText);
-            showStatus('Error de comunicación con el servidor al enviar la prueba.', true);
-        }).always(function() {
-            $btn.prop('disabled', false).text('Enviar correo de prueba');
+            $courses.append(opt);
         });
+    }
+
+    $(function() {
+        // Solo configuramos selects si el modal existe (la página puede venir sin open=1).
+        if ($('#mai-fullscreen-modal').length) {
+            rebuildTermOptions();
+            rebuildCourseOptions();
+
+            $('#programid').on('change', function() {
+                rebuildTermOptions();
+                rebuildCourseOptions();
+            });
+
+            $('#termid').on('change', function() {
+                rebuildCourseOptions();
+            });
+        }
     });
 
 })(jQuery);
 </script>
 
 <?php
-// Convertimos textareas clave en editor HTML (usa el editor por defecto de Moodle).
+// Editores HTML para los campos largos (aunque estén en el modal).
 $editor = editors_get_preferred_editor();
 $editor->use_editor('report_template', []);
 $editor->use_editor('alert_student_message', []);
